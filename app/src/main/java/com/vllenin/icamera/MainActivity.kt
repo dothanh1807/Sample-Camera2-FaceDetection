@@ -8,17 +8,28 @@ import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import com.vllenin.icamera.camera.CameraView
 import com.vllenin.icamera.camera.ICamera.TakePictureCallbacks
+import com.vllenin.icamera.permission.PermissionUtil
 import kotlinx.android.synthetic.main.activity_main.*
 
 class MainActivity : AppCompatActivity() {
+
+  private var permissionUtils: PermissionUtil? = null
 
   @RequiresApi(Build.VERSION_CODES.M)
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     setContentView(R.layout.activity_main)
 
-    requestPermissions(arrayOf(android.Manifest.permission.CAMERA), 1)
+    permissionUtils = PermissionUtil(this)
+    permissionUtils?.request(android.Manifest.permission.CAMERA) { granted, _ ->
+      if (granted) {
+        initCamera()
+      }
+    }
 
+  }
+
+  private fun initCamera() {
     val cameraView = CameraView()
     supportFragmentManager.beginTransaction()
       .replace(R.id.fragmentContainer, cameraView, CameraView::class.toString())
@@ -44,7 +55,6 @@ class MainActivity : AppCompatActivity() {
         }
       })
     }
-
   }
 
   override fun onBackPressed() {
