@@ -22,7 +22,6 @@ import android.os.Build.VERSION_CODES
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
-import android.util.Log
 import android.util.Size
 import android.view.OrientationEventListener
 import android.view.Surface
@@ -127,7 +126,6 @@ class Camera2(
       }
 
       override fun onConfigured(captureSession: CameraCaptureSession) {
-        Log.d("XXX", "onConfigured")
         cameraCaptureSession = captureSession
         previewRequestBuilder?.let {
           cameraCaptureSession?.setRepeatingRequest(it.build(), captureCallback, backgroundHandler)
