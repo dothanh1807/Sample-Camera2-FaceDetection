@@ -29,6 +29,7 @@ class CameraView : Fragment() {
 
     val layoutParamsView = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT,
       RelativeLayout.LayoutParams.WRAP_CONTENT)
+    // This line of code means center crop preview
     layoutParamsView.addRule(RelativeLayout.CENTER_IN_PARENT)
     textureView = AutoFitTextureView(context)
     faceBorderView = FaceBorderView(context)
