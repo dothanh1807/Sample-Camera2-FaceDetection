@@ -27,9 +27,9 @@ interface ICamera {
 
     fun build(): ICamera? {
       return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-        Camera2(context, textureView)
+        Camera2(context, textureView, borderView)
       } else {
-        Camera2(context, textureView)
+        Camera2(context, textureView, borderView)
       }
     }
   }
