@@ -1,4 +1,4 @@
-package com.vllenin.icamera
+package com.vllenin.icamera.common
 
 import android.content.ContentValues
 import android.content.Context

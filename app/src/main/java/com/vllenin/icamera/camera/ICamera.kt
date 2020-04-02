@@ -15,6 +15,8 @@ interface ICamera {
 
   fun captureBurst(takePictureCallbacks: TakePictureCallbacks, delayMs: Int = 0)
 
+  fun stopCaptureBurst()
+
   fun captureBurstFreeHand(takePictureCallbacks: TakePictureCallbacks, delayMs: Int = 0)
 
   fun closeCamera()

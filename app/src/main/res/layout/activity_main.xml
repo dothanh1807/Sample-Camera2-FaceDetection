@@ -26,6 +26,7 @@
   <Button
       android:id="@+id/burst"
       android:text="Burst"
+      android:background="@android:color/darker_gray"
       android:layout_alignParentBottom="true"
       android:layout_toRightOf="@+id/takePicture"
       android:layout_width="wrap_content"
@@ -60,6 +61,14 @@
       android:layout_centerInParent="true"
       android:layout_width="300dp"
       android:layout_height="400dp">
+
+    <TextView
+        android:id="@+id/textView"
+        android:textSize="40sp"
+        android:textColor="#F7C229"
+        android:layout_centerInParent="true"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"/>
 
     <ImageView
         android:id="@+id/imageView"

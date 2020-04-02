@@ -1,4 +1,4 @@
-package com.vllenin.icamera.permission
+package com.vllenin.icamera.common.permission
 
 import android.content.Context
 import android.content.pm.PackageManager

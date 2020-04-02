@@ -3,26 +3,40 @@ package com.vllenin.icamera
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
+import android.view.MotionEvent
 import android.view.View
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.vllenin.icamera.camera.CameraView
 import com.vllenin.icamera.camera.ICamera.TakePictureCallbacks
-import com.vllenin.icamera.permission.PermissionUtil
+import com.vllenin.icamera.common.DebugLog
+import com.vllenin.icamera.common.FileUtils
+import com.vllenin.icamera.common.permission.PermissionUtil
 import kotlinx.android.synthetic.main.activity_main.*
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
   private var permissionUtils: PermissionUtil? = null
+  private var countImage = 0
 
   private val takePictureCallbacks = object : TakePictureCallbacks {
     override fun takePictureSucceeded(picture: Bitmap, isBurstMode: Boolean) {
       runOnUiThread {
-        overlay.visibility = View.VISIBLE
         imagePreview.visibility = View.VISIBLE
-        imageView.setImageBitmap(picture)
+        if (isBurstMode) {
+          Log.d("XXX", "takePictureSucceeded 111")
+          countImage++
+          textView.text = countImage.toString()
+        } else {
+          Log.d("XXX", "takePictureSucceeded 222")
+          overlay.visibility = View.VISIBLE
+          imageView.setImageBitmap(picture)
+        }
       }
+
     }
 
     override fun takePictureFailed(e: Exception) {
@@ -57,13 +71,35 @@ class MainActivity : AppCompatActivity() {
       cameraView.switchCamera()
     }
 
+    /**********************************************************************************************/
+
     takePicture.setOnClickListener {
       cameraView.capture(takePictureCallbacks)
-    }
-
-    burst.setOnClickListener {
 
     }
+
+    /**********************************************************************************************/
+
+    burst.setOnLongClickListener {
+      it.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_green_dark))
+      countImage = 0
+      cameraView.captureBurst(takePictureCallbacks)
+
+      true
+    }
+
+    burst.setOnTouchListener { view, motionEvent ->
+      when (motionEvent.action) {
+        MotionEvent.ACTION_UP -> {
+          view.setBackgroundColor(ContextCompat.getColor(this, android.R.color.darker_gray))
+          cameraView.stopCaptureBurst()
+        }
+      }
+
+      false
+    }
+
+    /**********************************************************************************************/
 
     burstFreeHand.setOnClickListener {
 

@@ -22,19 +22,21 @@ import android.os.Build.VERSION_CODES
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.util.Log
 import android.util.Size
 import android.view.OrientationEventListener
 import android.view.Surface
 import android.view.View.OnTouchListener
 import android.widget.RelativeLayout
-import com.vllenin.icamera.BitmapUtils
-import com.vllenin.icamera.DebugLog
-import com.vllenin.icamera.FileUtils
 import com.vllenin.icamera.camera.CameraUtils.CalculationSize.IMAGE
 import com.vllenin.icamera.camera.CameraUtils.CalculationSize.PREVIEW
 import com.vllenin.icamera.camera.ICamera.CameraFace
+import com.vllenin.icamera.common.BitmapUtils
+import com.vllenin.icamera.common.DebugLog
+import com.vllenin.icamera.common.FileUtils
 import com.vllenin.icamera.view.AutoFitTextureView
 import com.vllenin.icamera.view.FaceBorderView
+import java.util.concurrent.Semaphore
 import kotlin.math.max
 import kotlin.math.min
 
@@ -59,13 +61,18 @@ class Camera2(
   private var previewRequestBuilder: CaptureRequest.Builder? = null
   private var takePictureCallbacks: ICamera.TakePictureCallbacks? = null
   private var rectFocus = Rect()
+  private var countTaskTakePicture = 0
+  private var isForceStop = false
   private var isLandscape = false
   private var isBurstMode = false
+
+  private val takePictureImageLock = Semaphore(1)
 
   private lateinit var sensorArraySize: Size
   private lateinit var imageReader: ImageReader
   private lateinit var backgroundThread: HandlerThread
   private lateinit var backgroundHandler: Handler
+  private lateinit var takePictureRunnable: Runnable
   private lateinit var mainHandler: Handler
 
   private val orientationEventListener =
@@ -130,30 +137,35 @@ class Camera2(
     }
 
   private val imageReaderAvailableListener = ImageReader.OnImageAvailableListener { imageReader ->
-    val image: Image
-    try {
-      image = imageReader.acquireNextImage()
-    } catch (e: Exception) {
-      takePictureCallbacks?.takePictureFailed(e)
-      return@OnImageAvailableListener
-    }
-
-    backgroundHandler.post {
-      val buffer = image.planes[0].buffer
-      val bytes = ByteArray(buffer.remaining())
-      buffer.get(bytes)
+    if (!isForceStop) {
+      val image: Image
       try {
-        val previewSize = Size(((textureView.parent as RelativeLayout).width),
-          ((textureView.parent as RelativeLayout).height))
-        val configureBitmap = BitmapUtils.configureBitmap(bytes, previewSize)
-        takePictureCallbacks?.takePictureSucceeded(configureBitmap, isBurstMode)
-        FileUtils.saveImageJPEGIntoFolderMedia(context, configureBitmap,
-          "Vllenin-${System.currentTimeMillis()}")
+        image = imageReader.acquireNextImage()
       } catch (e: Exception) {
+        takePictureImageLock.release()
         takePictureCallbacks?.takePictureFailed(e)
-      } finally {
-        buffer.clear()
-        image.close()
+        return@OnImageAvailableListener
+      }
+
+      backgroundHandler.post {
+        val buffer = image.planes[0].buffer
+        val bytes = ByteArray(buffer.remaining())
+        buffer.get(bytes)
+        try {
+          val previewSize = Size(((textureView.parent as RelativeLayout).width),
+            ((textureView.parent as RelativeLayout).height))
+          val configureBitmap = BitmapUtils.configureBitmap(bytes, previewSize)
+          takePictureCallbacks?.takePictureSucceeded(configureBitmap, isBurstMode)
+          FileUtils.saveImageJPEGIntoFolderMedia(context, configureBitmap,
+            "Vllenin-${System.currentTimeMillis()}")
+          Log.d("XXX", "Save image finished")
+        } catch (e: Exception) {
+          takePictureCallbacks?.takePictureFailed(e)
+        } finally {
+          takePictureImageLock.release()
+          buffer.clear()
+          image.close()
+        }
       }
     }
   }
@@ -301,30 +313,43 @@ class Camera2(
   override fun capture(takePictureCallbacks: ICamera.TakePictureCallbacks, delayMs: Int) {
     this.takePictureCallbacks = takePictureCallbacks
     isBurstMode = false
+    takePictureImageLock.release()
 
-    val takePictureRequestBuilder =
-      cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
-    takePictureRequestBuilder?.addTarget(imageReader.surface)
-    takePictureRequestBuilder?.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
-    takePictureRequestBuilder?.let {
-      cameraCaptureSession?.capture(it.build(), object : CameraCaptureSession.CaptureCallback() {
-        override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest,
-          result: TotalCaptureResult) {
-          // Unlock focus || off flash
-        }
-      }, backgroundHandler)
-    }
+    takePicture()
   }
 
   override fun captureBurst(takePictureCallbacks: ICamera.TakePictureCallbacks, delayMs: Int) {
     this.takePictureCallbacks = takePictureCallbacks
     isBurstMode = true
+    isForceStop = false
+    takePictureImageLock.release()
+    countTaskTakePicture = 0
+    takePictureRunnable = Runnable {
+      Log.d("XXX", "Running ~~~~~~~~~~~~~~~")
+      if (!isForceStop) {
+        mainHandler.post {
+          takePictureImageLock.acquire()
+          countTaskTakePicture++
+          Log.d("XXX", "countTaskTakePicture $countTaskTakePicture")
+          takePicture()
+          backgroundHandler.postDelayed(takePictureRunnable, 100)
+        }
+      }
+    }
+    backgroundHandler.post(takePictureRunnable)
+  }
 
+  override fun stopCaptureBurst() {
+    takePictureImageLock.release()
+    backgroundHandler.removeCallbacks(takePictureRunnable)
+    isForceStop = true
   }
 
   override fun captureBurstFreeHand(takePictureCallbacks: ICamera.TakePictureCallbacks, delayMs: Int) {
     this.takePictureCallbacks = takePictureCallbacks
     isBurstMode = true
+    countTaskTakePicture = 0
+    isForceStop = false
 
   }
 
@@ -372,10 +397,26 @@ class Camera2(
       cameraSessionStateCallbackForPreview, backgroundHandler)
   }
 
+  private fun takePicture() {
+    Log.d("XXX", "takePicture")
+    val takePictureRequestBuilder =
+      cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+    takePictureRequestBuilder?.addTarget(imageReader.surface)
+    takePictureRequestBuilder?.let {
+      cameraCaptureSession?.capture(it.build(), object : CameraCaptureSession.CaptureCallback() {
+        override fun onCaptureCompleted(session: CameraCaptureSession,
+          request: CaptureRequest,
+          result: TotalCaptureResult) {
+
+        }
+      }, null)
+    }
+  }
+
   private fun initBackgroundThread() {
     backgroundThread = HandlerThread("Camera2")
     backgroundThread.start()
-    backgroundHandler = Handler(backgroundThread.looper ?: Looper.getMainLooper())
+    backgroundHandler = Handler(backgroundThread.looper)
 
     mainHandler = Handler(Looper.getMainLooper())
   }

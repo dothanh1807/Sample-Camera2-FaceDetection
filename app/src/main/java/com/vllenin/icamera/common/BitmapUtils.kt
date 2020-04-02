@@ -1,4 +1,4 @@
-package com.vllenin.icamera
+package com.vllenin.icamera.common
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory

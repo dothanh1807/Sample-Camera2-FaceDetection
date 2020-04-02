@@ -12,6 +12,10 @@ import com.vllenin.icamera.view.AutoFitTextureView
 import com.vllenin.icamera.view.FaceBorderView
 import com.vllenin.icamera.view.onSurfaceListener
 
+/**
+ * Wrapper camera using Fragment instead of ViewGroup, because i want handle state camera when
+ * system calls methods of Lifecycle
+ */
 class CameraView: Fragment() {
 
   private lateinit var viewContainer: RelativeLayout
@@ -74,6 +78,14 @@ class CameraView: Fragment() {
 
   fun capture(takePictureCallbacks: ICamera.TakePictureCallbacks, delayMs: Int = 0) {
     iCamera?.capture(takePictureCallbacks, delayMs)
+  }
+
+  fun captureBurst(takePictureCallbacks: ICamera.TakePictureCallbacks, delayMs: Int = 0) {
+    iCamera?.captureBurst(takePictureCallbacks, delayMs)
+  }
+
+  fun stopCaptureBurst() {
+    iCamera?.stopCaptureBurst()
   }
 
 }

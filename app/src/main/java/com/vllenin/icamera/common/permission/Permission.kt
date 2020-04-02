@@ -1,4 +1,4 @@
-package com.vllenin.icamera.permission
+package com.vllenin.icamera.common.permission
 
 data class Permission constructor(
   val permission: String,

@@ -1,6 +1,7 @@
-package com.vllenin.icamera
+package com.vllenin.icamera.common
 
 import android.util.Log
+import com.vllenin.icamera.BuildConfig
 
 object DebugLog {
 
