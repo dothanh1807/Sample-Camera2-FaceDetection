@@ -25,13 +25,17 @@ class MainActivity : AppCompatActivity() {
   private val takePictureCallbacks = object : TakePictureCallbacks {
     override fun takePictureSucceeded(picture: Bitmap, isBurstMode: Boolean) {
       runOnUiThread {
-        imagePreview.visibility = View.VISIBLE
         if (isBurstMode) {
           Log.d("XXX", "takePictureSucceeded 111")
+          textView.visibility = View.VISIBLE
+          imagePreview.visibility = View.INVISIBLE
+          overlay.visibility = View.INVISIBLE
           countImage++
           textView.text = countImage.toString()
         } else {
           Log.d("XXX", "takePictureSucceeded 222")
+          textView.visibility = View.INVISIBLE
+          imagePreview.visibility = View.VISIBLE
           overlay.visibility = View.VISIBLE
           imageView.setImageBitmap(picture)
         }
@@ -114,11 +118,15 @@ class MainActivity : AppCompatActivity() {
   }
 
   override fun onBackPressed() {
-    if (imagePreview.visibility == View.VISIBLE) {
-      overlay.visibility = View.INVISIBLE
-      imagePreview.visibility = View.INVISIBLE
-    } else {
-      super.onBackPressed()
+    when {
+      textView.visibility == View.VISIBLE -> textView.visibility = View.INVISIBLE
+
+      imagePreview.visibility == View.VISIBLE -> {
+        overlay.visibility = View.INVISIBLE
+        imagePreview.visibility = View.INVISIBLE
+      }
+
+      else -> super.onBackPressed()
     }
   }
 

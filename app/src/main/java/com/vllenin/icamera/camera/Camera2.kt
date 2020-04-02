@@ -140,7 +140,7 @@ class Camera2(
     if (!isForceStop) {
       val image: Image
       try {
-        image = imageReader.acquireNextImage()
+        image = imageReader.acquireLatestImage()
       } catch (e: Exception) {
         takePictureImageLock.release()
         takePictureCallbacks?.takePictureFailed(e)
@@ -313,6 +313,7 @@ class Camera2(
   override fun capture(takePictureCallbacks: ICamera.TakePictureCallbacks, delayMs: Int) {
     this.takePictureCallbacks = takePictureCallbacks
     isBurstMode = false
+    isForceStop = false
     takePictureImageLock.release()
 
     takePicture()
@@ -343,6 +344,7 @@ class Camera2(
     takePictureImageLock.release()
     backgroundHandler.removeCallbacks(takePictureRunnable)
     isForceStop = true
+    takePictureCallbacks = null
   }
 
   override fun captureBurstFreeHand(takePictureCallbacks: ICamera.TakePictureCallbacks, delayMs: Int) {
