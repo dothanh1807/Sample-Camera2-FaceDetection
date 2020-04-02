@@ -8,11 +8,11 @@ import android.view.ViewGroup
 import android.widget.RelativeLayout
 import androidx.fragment.app.Fragment
 import com.vllenin.icamera.camera.ICamera.CameraFace
-import com.vllenin.icamera.camera.ICamera.TakePictureCallbacks
+import com.vllenin.icamera.view.AutoFitTextureView
 import com.vllenin.icamera.view.FaceBorderView
 import com.vllenin.icamera.view.onSurfaceListener
 
-class CameraView : Fragment() {
+class CameraView: Fragment() {
 
   private lateinit var viewContainer: RelativeLayout
   private lateinit var textureView: AutoFitTextureView
@@ -29,7 +29,7 @@ class CameraView : Fragment() {
 
     val layoutParamsView = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT,
       RelativeLayout.LayoutParams.WRAP_CONTENT)
-    // This line of code means center crop preview
+    // This line of code means preview is center crop
     layoutParamsView.addRule(RelativeLayout.CENTER_IN_PARENT)
     textureView = AutoFitTextureView(context)
     faceBorderView = FaceBorderView(context)
@@ -72,8 +72,8 @@ class CameraView : Fragment() {
     iCamera?.switchCamera()
   }
 
-  fun takePicture(takePictureCallbacks: TakePictureCallbacks) {
-    iCamera?.takePicture(takePictureCallbacks)
+  fun capture(takePictureCallbacks: ICamera.TakePictureCallbacks, delayMs: Int = 0) {
+    iCamera?.capture(takePictureCallbacks, delayMs)
   }
 
 }

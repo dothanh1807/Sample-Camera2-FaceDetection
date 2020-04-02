@@ -12,38 +12,6 @@ import android.view.View
 
 class FaceBorderView(context: Context?, attrs: AttributeSet? = null) : View(context, attrs) {
 
-    private val mListCenterCoordinates = ArrayList<RectF>()
-    private val mListRectF = ArrayList<RectF>()
-    private val mRectFTouch = RectF()
-    private val mPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private var mFlagModeAutoFaceDetect = true
-    private var mFlagModeTouchFocus = true
-    private var mFlagFirst = true
-    private var mMode = MODE_TOUCH_FOCUS
-    private var mTouchX: Float = 0f
-    private var mTouchY: Float = 0f
-    private val mSizeRecFBefore = 250f
-    private val mSizeRecFLate = 150f
-    private var animatorTouchFocus: ValueAnimator? = null
-    private var animatorFaceDetection: ValueAnimator? = null
-    private val mPropertyLeft = "left"
-    private val mPropertyTop = "top"
-    private val mPropertyRight = "right"
-    private val mPropertyBottom = "bottom"
-    private val corner = 20f
-    var isFadeOut = false
-    private val runnableFadeOutDelay = Runnable {
-        animate().alpha(0f).setDuration(TIME_ALPHA_ANIMATION).start()
-    }
-
-    private var mRunnableChangeMode = Runnable {
-        if (mListCenterCoordinates.isNotEmpty()) {
-            alpha = 1f
-            mMode = MODE_AUTO_FACE_DETECT
-            mFlagModeAutoFaceDetect = true
-        }
-    }
-
     companion object {
         private const val TIME_DETECT_ANIMATION: Long = 100
         private const val TIME_FOCUS_ANIMATION: Long = 300
@@ -54,33 +22,66 @@ class FaceBorderView(context: Context?, attrs: AttributeSet? = null) : View(cont
         private const val MODE_AUTO_FACE_DETECT = 2
     }
 
+    private val listCenterCoordinates = ArrayList<RectF>()
+    private val listRectF = ArrayList<RectF>()
+    private val rectFTouch = RectF()
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var flagModeAutoFaceDetect = true
+    private var flagModeTouchFocus = true
+    private var flagFirst = true
+    private var mode = MODE_TOUCH_FOCUS
+    private var touchX: Float = 0f
+    private var touchY: Float = 0f
+    private val sizeRecFBefore = 250f
+    private val sizeRecFLate = 150f
+    private var animatorTouchFocus: ValueAnimator? = null
+    private var animatorFaceDetection: ValueAnimator? = null
+    private val propertyLeft = "left"
+    private val propertyTop = "top"
+    private val propertyRight = "right"
+    private val propertyBottom = "bottom"
+    private val corner = 20f
+    var isFadeOut = false
+
+    private val runnableAutoFadeOut = Runnable {
+        animate().alpha(0f).setDuration(TIME_ALPHA_ANIMATION).start()
+    }
+
+    private var runnableChangeMode = Runnable {
+        if (listCenterCoordinates.isNotEmpty()) {
+            alpha = 1f
+            mode = MODE_AUTO_FACE_DETECT
+            flagModeAutoFaceDetect = true
+        }
+    }
+
     init {
-        mPaint.color = Color.YELLOW
-        mPaint.strokeWidth = 3f
-        mPaint.style = Paint.Style.STROKE
+        paint.color = Color.YELLOW
+        paint.strokeWidth = 3f
+        paint.style = Paint.Style.STROKE
     }
 
     override fun onDraw(canvas: Canvas) {
 
         when (MODE_AUTO_FACE_DETECT) {// Cause only mode auto focus to faces
             MODE_TOUCH_FOCUS -> {
-                if (mTouchX == 0f) {
-                    mTouchX = width / 2f
-                    mTouchY = height / 2f
-                    mRectFTouch.left = mTouchX - mSizeRecFLate
-                    mRectFTouch.top = mTouchY - mSizeRecFLate
-                    mRectFTouch.right = mTouchX + mSizeRecFLate
-                    mRectFTouch.bottom = mTouchY + mSizeRecFLate
+                if (touchX == 0f) {
+                    touchX = width / 2f
+                    touchY = height / 2f
+                    rectFTouch.left = touchX - sizeRecFLate
+                    rectFTouch.top = touchY - sizeRecFLate
+                    rectFTouch.right = touchX + sizeRecFLate
+                    rectFTouch.bottom = touchY + sizeRecFLate
                 }
-                canvas.drawRoundRect(mRectFTouch.left, mRectFTouch.top, mRectFTouch.right,
-                    mRectFTouch.bottom, corner, corner, mPaint)
+                canvas.drawRoundRect(rectFTouch.left, rectFTouch.top, rectFTouch.right,
+                    rectFTouch.bottom, corner, corner, paint)
             }
 
             MODE_AUTO_FACE_DETECT -> {
-                if (mListCenterCoordinates.isNotEmpty()) {
-                    for (i in 0..mListCenterCoordinates.lastIndex) {
-                        canvas.drawRoundRect(mListRectF[i].left, mListRectF[i].top,
-                            mListRectF[i].right, mListRectF[i].bottom, corner, corner, mPaint)
+                if (listCenterCoordinates.isNotEmpty()) {
+                    for (i in 0..listCenterCoordinates.lastIndex) {
+                        canvas.drawRoundRect(listRectF[i].left, listRectF[i].top,
+                            listRectF[i].right, listRectF[i].bottom, corner, corner, paint)
                     }
                 }
             }
@@ -88,34 +89,34 @@ class FaceBorderView(context: Context?, attrs: AttributeSet? = null) : View(cont
     }
 
     fun drawListFace(list: Array<RectF>) {
-        mListCenterCoordinates.clear()
-        mListCenterCoordinates.addAll(list)
+        listCenterCoordinates.clear()
+        listCenterCoordinates.addAll(list)
         getCoordinatesOfFace()
         if (true) {// Cause only mode auto focus to faces
             if(list.isNotEmpty()) {
                 alpha = 1f
                 isFadeOut = false
-                removeCallbacks(runnableFadeOutDelay)
+                removeCallbacks(runnableAutoFadeOut)
                 for (i in 0..list.lastIndex) {
                     animatorFaceDetection = ValueAnimator.ofPropertyValuesHolder(
-                        PropertyValuesHolder.ofFloat(mPropertyLeft, mListRectF[i].left,
+                        PropertyValuesHolder.ofFloat(propertyLeft, listRectF[i].left,
                             list[i].left),
-                        PropertyValuesHolder.ofFloat(mPropertyTop, mListRectF[i].top,
+                        PropertyValuesHolder.ofFloat(propertyTop, listRectF[i].top,
                             list[i].top),
-                        PropertyValuesHolder.ofFloat(mPropertyRight, mListRectF[i].right,
+                        PropertyValuesHolder.ofFloat(propertyRight, listRectF[i].right,
                             list[i].right),
-                        PropertyValuesHolder.ofFloat(mPropertyBottom, mListRectF[i].bottom,
+                        PropertyValuesHolder.ofFloat(propertyBottom, listRectF[i].bottom,
                             list[i].bottom))
                     animatorFaceDetection?.duration =
                         TIME_DETECT_ANIMATION
                     animatorFaceDetection?.addUpdateListener {
-                        mListRectF[i].left = it.getAnimatedValue(mPropertyLeft) as Float
-                        mListRectF[i].top = it.getAnimatedValue(mPropertyTop) as Float
-                        mListRectF[i].right = it.getAnimatedValue(mPropertyRight) as Float
-                        mListRectF[i].bottom = it.getAnimatedValue(mPropertyBottom) as Float
+                        listRectF[i].left = it.getAnimatedValue(propertyLeft) as Float
+                        listRectF[i].top = it.getAnimatedValue(propertyTop) as Float
+                        listRectF[i].right = it.getAnimatedValue(propertyRight) as Float
+                        listRectF[i].bottom = it.getAnimatedValue(propertyBottom) as Float
 
-                        if ((it.getAnimatedValue(mPropertyBottom) as Float) == list[i].bottom && alpha == 1f) {
-                            postDelayed(runnableFadeOutDelay,
+                        if ((it.getAnimatedValue(propertyBottom) as Float) == list[i].bottom && alpha == 1f) {
+                            postDelayed(runnableAutoFadeOut,
                                 TIME_DELAY_HIDE_FOCUS
                             )
                         }
@@ -127,44 +128,44 @@ class FaceBorderView(context: Context?, attrs: AttributeSet? = null) : View(cont
             }
         } else {
             if(list.isNotEmpty()){
-                if(mFlagModeTouchFocus){
-                    mMode = MODE_AUTO_FACE_DETECT
+                if(flagModeTouchFocus){
+                    mode = MODE_AUTO_FACE_DETECT
                     alpha = 1f
-                    mFlagModeTouchFocus = false
+                    flagModeTouchFocus = false
                 }
             }
         }
     }
 
     fun touchTo(x: Float, y: Float) {
-        removeCallbacks(mRunnableChangeMode)
+        removeCallbacks(runnableChangeMode)
         animate().cancel()
         animatorTouchFocus?.cancel()
         animatorTouchFocus?.removeAllUpdateListeners()
-        mTouchX = x
-        mTouchY = y
+        touchX = x
+        touchY = y
         alpha = 1f
-        mFlagFirst = true
-        mMode = MODE_TOUCH_FOCUS
-        postDelayed(mRunnableChangeMode,
+        flagFirst = true
+        mode = MODE_TOUCH_FOCUS
+        postDelayed(runnableChangeMode,
             TIME_DELAY
         )
         animatorTouchFocus = ValueAnimator.ofPropertyValuesHolder(
-            PropertyValuesHolder.ofFloat(mPropertyLeft, mTouchX - mSizeRecFBefore,
-                mTouchX - mSizeRecFLate),
-            PropertyValuesHolder.ofFloat(mPropertyTop, mTouchY - mSizeRecFBefore,
-                mTouchY - mSizeRecFLate),
-            PropertyValuesHolder.ofFloat(mPropertyRight, mTouchX + mSizeRecFBefore,
-                mTouchX + mSizeRecFLate),
-            PropertyValuesHolder.ofFloat(mPropertyBottom, mTouchY +
-                    mSizeRecFBefore, mTouchY + mSizeRecFLate))
+            PropertyValuesHolder.ofFloat(propertyLeft, touchX - sizeRecFBefore,
+                touchX - sizeRecFLate),
+            PropertyValuesHolder.ofFloat(propertyTop, touchY - sizeRecFBefore,
+                touchY - sizeRecFLate),
+            PropertyValuesHolder.ofFloat(propertyRight, touchX + sizeRecFBefore,
+                touchX + sizeRecFLate),
+            PropertyValuesHolder.ofFloat(propertyBottom, touchY +
+                    sizeRecFBefore, touchY + sizeRecFLate))
         animatorTouchFocus?.duration =
             TIME_FOCUS_ANIMATION
         animatorTouchFocus?.addUpdateListener {
-            mRectFTouch.left = it.getAnimatedValue(mPropertyLeft) as Float
-            mRectFTouch.top = it.getAnimatedValue(mPropertyTop) as Float
-            mRectFTouch.right = it.getAnimatedValue(mPropertyRight) as Float
-            mRectFTouch.bottom = it.getAnimatedValue(mPropertyBottom) as Float
+            rectFTouch.left = it.getAnimatedValue(propertyLeft) as Float
+            rectFTouch.top = it.getAnimatedValue(propertyTop) as Float
+            rectFTouch.right = it.getAnimatedValue(propertyRight) as Float
+            rectFTouch.bottom = it.getAnimatedValue(propertyBottom) as Float
             invalidate()
         }
         animatorTouchFocus?.start()
@@ -172,17 +173,17 @@ class FaceBorderView(context: Context?, attrs: AttributeSet? = null) : View(cont
 
     fun fadeOut() {
         if (!isFadeOut) {
-            mListCenterCoordinates.clear()
-            removeCallbacks(runnableFadeOutDelay)
+            listCenterCoordinates.clear()
+            removeCallbacks(runnableAutoFadeOut)
             animate().alpha(0f).setDuration(TIME_FOCUS_ANIMATION).start()
             isFadeOut = true
         }
     }
 
     private fun getCoordinatesOfFace() {
-        for (i in 0..mListCenterCoordinates.lastIndex) {
-            if (mListRectF.size < mListCenterCoordinates.size) {
-                mListRectF.add(RectF())
+        for (i in 0..listCenterCoordinates.lastIndex) {
+            if (listRectF.size < listCenterCoordinates.size) {
+                listRectF.add(RectF())
             }
         }
     }

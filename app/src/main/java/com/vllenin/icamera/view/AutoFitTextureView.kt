@@ -1,10 +1,9 @@
-package com.vllenin.icamera.camera
+package com.vllenin.icamera.view
 
 import android.content.Context
 import android.graphics.Matrix
 import android.graphics.SurfaceTexture
 import android.util.AttributeSet
-import android.util.Log
 import android.view.TextureView
 
 class AutoFitTextureView @JvmOverloads constructor(

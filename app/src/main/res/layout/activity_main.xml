@@ -4,6 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     tools:context=".MainActivity"
+    tools:ignore="HardcodedText"
     >
 
   <Button
@@ -19,9 +20,26 @@
       android:layout_width="wrap_content"
       android:layout_height="wrap_content"
       android:layout_alignParentBottom="true"
-      android:layout_centerHorizontal="true"
       android:text="Take Picture"
       />
+
+  <Button
+      android:id="@+id/burst"
+      android:text="Burst"
+      android:layout_alignParentBottom="true"
+      android:layout_toRightOf="@+id/takePicture"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      tools:ignore="RtlHardcoded" />
+
+  <Button
+      android:id="@+id/burstFreeHand"
+      android:text="Burst Free Hand"
+      android:layout_alignParentRight="true"
+      android:layout_alignParentBottom="true"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      tools:ignore="RtlHardcoded" />
 
   <FrameLayout
       android:id="@+id/fragmentContainer"
@@ -47,7 +65,8 @@
         android:id="@+id/imageView"
         android:layout_centerInParent="true"
         android:layout_width="wrap_content"
-        android:layout_height="wrap_content"/>
+        android:layout_height="wrap_content"
+        tools:ignore="ContentDescription" />
 
   </RelativeLayout>
 

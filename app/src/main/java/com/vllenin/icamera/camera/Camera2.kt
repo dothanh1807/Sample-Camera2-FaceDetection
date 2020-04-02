@@ -29,9 +29,11 @@ import android.view.View.OnTouchListener
 import android.widget.RelativeLayout
 import com.vllenin.icamera.BitmapUtils
 import com.vllenin.icamera.DebugLog
+import com.vllenin.icamera.FileUtils
 import com.vllenin.icamera.camera.CameraUtils.CalculationSize.IMAGE
 import com.vllenin.icamera.camera.CameraUtils.CalculationSize.PREVIEW
 import com.vllenin.icamera.camera.ICamera.CameraFace
+import com.vllenin.icamera.view.AutoFitTextureView
 import com.vllenin.icamera.view.FaceBorderView
 import kotlin.math.max
 import kotlin.math.min
@@ -45,8 +47,9 @@ class Camera2(
 ) : ICamera {
 
   companion object {
-    private const val FOCUS_SIZE = 400
+    private const val FOCUS_SIZE = 200
     private const val FOCUS_TAG = "FOCUS_TAG"
+    private const val DISTANCE_REDRAW = 25
   }
 
   private var cameraId: String = ""
@@ -54,9 +57,10 @@ class Camera2(
   private var cameraCharacteristics: CameraCharacteristics? = null
   private var cameraCaptureSession: CameraCaptureSession? = null
   private var previewRequestBuilder: CaptureRequest.Builder? = null
-  private var captureCallbacks: ICamera.TakePictureCallbacks? = null
+  private var takePictureCallbacks: ICamera.TakePictureCallbacks? = null
   private var rectFocus = Rect()
   private var isLandscape = false
+  private var isBurstMode = false
 
   private lateinit var sensorArraySize: Size
   private lateinit var imageReader: ImageReader
@@ -75,19 +79,15 @@ class Camera2(
       }
     }
 
-  private val onTouchListener = OnTouchListener { view, p1 ->
-    val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-    val cameraCharacteristic = cameraManager.getCameraCharacteristics(cameraId)
-    val cameraActiveArray = cameraCharacteristic.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)!!
-    val eventX = p1.x
-    val eventY = p1.y
+  private val onTouchPreviewListener = OnTouchListener { view, event ->
+    // Convert coordinate when touch on preview to coordinate on sensor
+    val focusX = (event.y / view.height.toFloat() * sensorArraySize.width.toFloat()).toInt()
+    val focusY = ((1 - event.x / view.width.toFloat()) * sensorArraySize.height.toFloat()).toInt()
 
-    val focusX = (eventY / view.height.toFloat() * cameraActiveArray.width().toFloat()).toInt()
-    val focusY = ((1 - eventX / view.width.toFloat()) * cameraActiveArray.height().toFloat()).toInt()
     val left = max(focusX - FOCUS_SIZE, 0)
     val top = max(focusY - FOCUS_SIZE, 0)
-    val right = min(left + FOCUS_SIZE * 2, cameraActiveArray.width())
-    val bottom = min(top + FOCUS_SIZE * 2, cameraActiveArray.width())
+    val right = min(focusX + FOCUS_SIZE, sensorArraySize.width)
+    val bottom = min(focusY + FOCUS_SIZE, sensorArraySize.height)
     rectFocus = Rect(left, top, right, bottom)
     focusTo(rectFocus)
 
@@ -102,9 +102,7 @@ class Camera2(
       previewCamera()
     }
 
-    override fun onDisconnected(cameraDevice: CameraDevice) {
-
-    }
+    override fun onDisconnected(cameraDevice: CameraDevice) {}
 
     override fun onError(cameraDevice: CameraDevice, p1: Int) {
       closeCamera()
@@ -121,9 +119,7 @@ class Camera2(
 
   private val cameraSessionStateCallbackForPreview =
     object : CameraCaptureSession.StateCallback() {
-      override fun onConfigureFailed(cameraCaptureSession: CameraCaptureSession) {
-
-      }
+      override fun onConfigureFailed(cameraCaptureSession: CameraCaptureSession) {}
 
       override fun onConfigured(captureSession: CameraCaptureSession) {
         cameraCaptureSession = captureSession
@@ -137,13 +133,8 @@ class Camera2(
     val image: Image
     try {
       image = imageReader.acquireNextImage()
-    } catch (e: IllegalStateException) {
-      DebugLog.e(e.message ?: "")
-      captureCallbacks?.takePictureFailed(e)
-      return@OnImageAvailableListener
     } catch (e: Exception) {
-      DebugLog.e(e.message ?: "")
-      captureCallbacks?.takePictureFailed(e)
+      takePictureCallbacks?.takePictureFailed(e)
       return@OnImageAvailableListener
     }
 
@@ -155,11 +146,11 @@ class Camera2(
         val previewSize = Size(((textureView.parent as RelativeLayout).width),
           ((textureView.parent as RelativeLayout).height))
         val configureBitmap = BitmapUtils.configureBitmap(bytes, previewSize)
-
-        captureCallbacks?.takePictureSucceeded(configureBitmap)
+        takePictureCallbacks?.takePictureSucceeded(configureBitmap, isBurstMode)
+        FileUtils.saveImageJPEGIntoFolderMedia(context, configureBitmap,
+          "Vllenin-${System.currentTimeMillis()}")
       } catch (e: Exception) {
-        DebugLog.e(e.message ?: "")
-        captureCallbacks?.takePictureFailed(e)
+        takePictureCallbacks?.takePictureFailed(e)
       } finally {
         buffer.clear()
         image.close()
@@ -167,7 +158,8 @@ class Camera2(
     }
   }
 
-  private val captureCallback = object : CameraCaptureSession.CaptureCallback() {
+  private val captureCallback =
+    object : CameraCaptureSession.CaptureCallback() {
 
     override fun onCaptureCompleted(
       session: CameraCaptureSession,
@@ -180,10 +172,11 @@ class Camera2(
           facesArray[it].bounds
         }
         if (!boundsArray.isNullOrEmpty()) {
-          if (rectFocus.centerY() < boundsArray[0].centerY() - 25 ||
-            rectFocus.centerY() > boundsArray[0].centerY() + 25 ||
-            rectFocus.centerX() < boundsArray[0].centerX() - 25 ||
-            rectFocus.centerX() > boundsArray[0].centerX() + 25 || faceBorderView.isFadeOut) {
+          if (rectFocus.centerY() < boundsArray[0].centerY() - DISTANCE_REDRAW ||
+            rectFocus.centerY() > boundsArray[0].centerY() + DISTANCE_REDRAW ||
+            rectFocus.centerX() < boundsArray[0].centerX() - DISTANCE_REDRAW ||
+            rectFocus.centerX() > boundsArray[0].centerX() + DISTANCE_REDRAW ||
+            faceBorderView.isFadeOut) {
 
             rectFocus = boundsArray[0]
             focusTo(boundsArray[0])
@@ -205,17 +198,21 @@ class Camera2(
                 previewY = centerY
                 ratioFace = 1f
               } else {
+                // This formula is formula at onTouchPreviewListener in this class
                 centerY = ((boundsOnSensor.centerX().toFloat() * textureView.height.toFloat()) /
                   sensorArraySize.width.toFloat())
                 centerX = ((1.0f - boundsOnSensor.centerY().toFloat() / sensorArraySize.height.toFloat()) *
                   (textureView.width.toFloat()))
-                /** Work around: Because don't know why with this formula I convert coordinate on
-                    preview to coordinate on sensor is correct, but in here is incorrect
+                /**
+                 * Workaround: Because i don't know why with this formula, i convert coordinate on
+                 * preview to coordinate on sensor is correct, but in here is incorrect.
+                 * If someone resolve this issues, please push your branch to git.
                  */
                 val plusX = (centerX - (textureView.width/2)) * (textureView.width.toFloat() /
                   sensorArraySize.height)
-                /** Because preview is center crop, if above crop then = 0. Search:
-                 *  layoutParamsView.addRule(RelativeLayout.CENTER_IN_PARENT) in class CameraView
+                /**
+                 * Because preview is center crop, if above crop then "plusY = 0". Search:
+                 * layoutParamsView.addRule(RelativeLayout.CENTER_IN_PARENT) in class CameraView
                  */
                 val plusY = (textureView.height/2 - textureView.height/2)
 
@@ -267,7 +264,6 @@ class Camera2(
 
   /** --------------------------------------------------------------------------------------------- **/
 
-  @SuppressLint("ClickableViewAccessibility")
   override fun openCamera(cameraFace: CameraFace) {
     initBackgroundThread()
 
@@ -277,8 +273,8 @@ class Camera2(
     sensorArraySize = cameraCharacteristics?.get(CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE)!!
     val sensorOrientation = cameraCharacteristics?.get(CameraCharacteristics.SENSOR_ORIENTATION)
     val mapConfig =
-      cameraCharacteristics?.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-    val previewSize = CameraUtils.calculationSize(mapConfig!!, PREVIEW)
+      cameraCharacteristics?.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)!!
+    val previewSize = CameraUtils.calculationSize(mapConfig, PREVIEW)
 
     if (sensorOrientation == 90 || sensorOrientation == 270) {
       textureView.setAspectRatio(previewSize.height, previewSize.width)
@@ -291,9 +287,6 @@ class Camera2(
     } catch (e: CameraAccessException) {
       DebugLog.e(e.message ?: "")
     }
-
-    orientationEventListener.enable()
-    textureView.setOnTouchListener(onTouchListener)
   }
 
   override fun switchCamera() {
@@ -305,8 +298,9 @@ class Camera2(
     }
   }
 
-  override fun takePicture(callback: ICamera.TakePictureCallbacks) {
-    captureCallbacks = callback
+  override fun capture(takePictureCallbacks: ICamera.TakePictureCallbacks, delayMs: Int) {
+    this.takePictureCallbacks = takePictureCallbacks
+    isBurstMode = false
 
     val takePictureRequestBuilder =
       cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
@@ -322,26 +316,16 @@ class Camera2(
     }
   }
 
-  override fun previewCamera() {
-    val mapConfig = cameraCharacteristics?.get(
-      CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-    val imageSize = CameraUtils.calculationSize(mapConfig!!, IMAGE)
-    textureView.surfaceTexture.setDefaultBufferSize(imageSize.width, imageSize.height)
-    val surface = Surface(textureView.surfaceTexture)
-    imageReader = ImageReader.newInstance(imageSize.width, imageSize.height, ImageFormat.JPEG, 2)
-    imageReader.setOnImageAvailableListener(imageReaderAvailableListener, backgroundHandler)
+  override fun captureBurst(takePictureCallbacks: ICamera.TakePictureCallbacks, delayMs: Int) {
+    this.takePictureCallbacks = takePictureCallbacks
+    isBurstMode = true
 
-    previewRequestBuilder = cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
-    previewRequestBuilder?.addTarget(surface)
-    previewRequestBuilder?.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
-    previewRequestBuilder?.set(CaptureRequest.STATISTICS_FACE_DETECT_MODE,
-      CameraMetadata.STATISTICS_FACE_DETECT_MODE_SIMPLE)
-    if (!rectFocus.isEmpty) {
-      focusTo(rectFocus)
-    }
+  }
 
-    cameraDevice?.createCaptureSession(listOf(surface, imageReader.surface),
-      cameraSessionStateCallbackForPreview, backgroundHandler)
+  override fun captureBurstFreeHand(takePictureCallbacks: ICamera.TakePictureCallbacks, delayMs: Int) {
+    this.takePictureCallbacks = takePictureCallbacks
+    isBurstMode = true
+
   }
 
   override fun closeCamera() {
@@ -360,6 +344,32 @@ class Camera2(
     } catch (e: Exception) {
       DebugLog.e(e.message ?: " When closeCamera")
     }
+  }
+
+  @SuppressLint("ClickableViewAccessibility")
+  private fun previewCamera() {
+    orientationEventListener.enable()
+    val mapConfig = cameraCharacteristics?.get(
+      CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+    val imageSize = CameraUtils.calculationSize(mapConfig!!, IMAGE)
+    textureView.surfaceTexture.setDefaultBufferSize(imageSize.width, imageSize.height)
+    textureView.setOnTouchListener(onTouchPreviewListener)
+    val surface = Surface(textureView.surfaceTexture)
+    imageReader = ImageReader.newInstance(imageSize.width, imageSize.height, ImageFormat.JPEG, 2)
+    imageReader.setOnImageAvailableListener(imageReaderAvailableListener, backgroundHandler)
+
+    previewRequestBuilder = cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+    previewRequestBuilder?.addTarget(surface)
+    previewRequestBuilder?.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+    // Face detection with mode MODE_SIMPLE, can change to STATISTICS_FACE_DETECT_MODE_FULL
+    previewRequestBuilder?.set(CaptureRequest.STATISTICS_FACE_DETECT_MODE,
+      CameraMetadata.STATISTICS_FACE_DETECT_MODE_SIMPLE)
+    if (!rectFocus.isEmpty) {
+      focusTo(rectFocus)
+    }
+
+    cameraDevice?.createCaptureSession(listOf(surface, imageReader.surface),
+      cameraSessionStateCallbackForPreview, backgroundHandler)
   }
 
   private fun initBackgroundThread() {
@@ -401,8 +411,8 @@ class Camera2(
       }
     } catch (e: CameraAccessException) {
       DebugLog.e("Focus failed ${e.message}")
-    } catch (illegalStateException: IllegalStateException) {
-      DebugLog.e("Focus failed ${illegalStateException.message}")
+    } catch (e: IllegalStateException) {
+      DebugLog.e("Focus failed ${e.message}")
     }
   }
 

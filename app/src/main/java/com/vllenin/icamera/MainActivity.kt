@@ -10,10 +10,25 @@ import com.vllenin.icamera.camera.CameraView
 import com.vllenin.icamera.camera.ICamera.TakePictureCallbacks
 import com.vllenin.icamera.permission.PermissionUtil
 import kotlinx.android.synthetic.main.activity_main.*
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
   private var permissionUtils: PermissionUtil? = null
+
+  private val takePictureCallbacks = object : TakePictureCallbacks {
+    override fun takePictureSucceeded(picture: Bitmap, isBurstMode: Boolean) {
+      runOnUiThread {
+        overlay.visibility = View.VISIBLE
+        imagePreview.visibility = View.VISIBLE
+        imageView.setImageBitmap(picture)
+      }
+    }
+
+    override fun takePictureFailed(e: Exception) {
+      DebugLog.e(e.message ?: e.toString())
+    }
+  }
 
   @RequiresApi(Build.VERSION_CODES.M)
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -21,9 +36,11 @@ class MainActivity : AppCompatActivity() {
     setContentView(R.layout.activity_main)
 
     permissionUtils = PermissionUtil(this)
-    permissionUtils?.request(android.Manifest.permission.CAMERA) { granted, _ ->
+    permissionUtils?.request(android.Manifest.permission.CAMERA,
+      android.Manifest.permission.WRITE_EXTERNAL_STORAGE) { granted, _ ->
       if (granted) {
         initCamera()
+        initMediaFolder()
       }
     }
 
@@ -41,19 +58,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     takePicture.setOnClickListener {
-      cameraView.takePicture(object : TakePictureCallbacks {
-        override fun takePictureSucceeded(picture: Bitmap) {
-          runOnUiThread {
-            overlay.visibility = View.VISIBLE
-            imagePreview.visibility = View.VISIBLE
-            imageView.setImageBitmap(picture)
-          }
-        }
+      cameraView.capture(takePictureCallbacks)
+    }
 
-        override fun takePictureFailed(e: Exception) {
-          DebugLog.e(e.message ?: "")
-        }
-      })
+    burst.setOnClickListener {
+
+    }
+
+    burstFreeHand.setOnClickListener {
+
+    }
+  }
+
+  private fun initMediaFolder() {
+    val file = File(FileUtils.getPathFolderMedia())
+    if (!file.exists()) {
+      file.mkdirs()
     }
   }
 

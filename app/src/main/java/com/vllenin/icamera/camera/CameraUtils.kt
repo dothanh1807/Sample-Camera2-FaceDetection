@@ -41,7 +41,7 @@ object CameraUtils {
     val aspectRatio = AspectRatio.of(16, 9)
     var preferred: Size
     val sizesWithAspectRatio = imageSizeMap.sizes(aspectRatio)
-    if (sizesWithAspectRatio.size > 0) {
+    if (sizesWithAspectRatio != null && sizesWithAspectRatio.size > 0) {
       preferred = sizesWithAspectRatio.last()
       for (aSize in sizesWithAspectRatio) {
         if (aSize.width * aSize.height <= MAX_HEIGHT_OUTPUT_IMAGE * MAX_WIDTH_OUTPUT_IMAGE) {
@@ -80,7 +80,7 @@ object CameraUtils {
 
     // If no size is big enough, pick the largest one which matches the ratio.
     val matchedSizes = previewSizeMap.sizes(preferredAspectRatio)
-    return if (matchedSizes.size > 0) {
+    return if (matchedSizes != null && matchedSizes.size > 0) {
       matchedSizes.last()
     } else supportedPreviewSizes.last()
   }
@@ -282,8 +282,8 @@ object CameraUtils {
       return mRatios.keys
     }
 
-    fun sizes(ratio: AspectRatio): SortedSet<Size> {
-      return mRatios[ratio]!!
+    fun sizes(ratio: AspectRatio): SortedSet<Size>? {
+      return mRatios[ratio]
     }
 
     fun defaultSize(): Size {
@@ -296,8 +296,7 @@ object CameraUtils {
 
   }
 
-  class Size
-  internal constructor(val width: Int, val height: Int) : Comparable<Size> {
+  class Size internal constructor(val width: Int, val height: Int) : Comparable<Size> {
 
     private val areaSize: Int
       get() = width * height

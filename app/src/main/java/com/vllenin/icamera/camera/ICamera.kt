@@ -3,6 +3,7 @@ package com.vllenin.icamera.camera
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
+import com.vllenin.icamera.view.AutoFitTextureView
 import com.vllenin.icamera.view.FaceBorderView
 
 interface ICamera {
@@ -10,9 +11,11 @@ interface ICamera {
 
   fun switchCamera()
 
-  fun takePicture(callback : TakePictureCallbacks)
+  fun capture(takePictureCallbacks: TakePictureCallbacks, delayMs: Int = 0)
 
-  fun previewCamera()
+  fun captureBurst(takePictureCallbacks: TakePictureCallbacks, delayMs: Int = 0)
+
+  fun captureBurstFreeHand(takePictureCallbacks: TakePictureCallbacks, delayMs: Int = 0)
 
   fun closeCamera()
 
@@ -35,7 +38,7 @@ interface ICamera {
   }
 
   interface TakePictureCallbacks {
-    fun takePictureSucceeded(picture: Bitmap)
+    fun takePictureSucceeded(picture: Bitmap, isBurstMode: Boolean)
 
     fun takePictureFailed(e: Exception)
   }
