@@ -6,15 +6,8 @@ import android.content.Context
 import android.graphics.ImageFormat
 import android.graphics.Rect
 import android.graphics.RectF
-import android.hardware.camera2.CameraAccessException
-import android.hardware.camera2.CameraCaptureSession
-import android.hardware.camera2.CameraCharacteristics
-import android.hardware.camera2.CameraDevice
-import android.hardware.camera2.CameraManager
-import android.hardware.camera2.CameraMetadata
-import android.hardware.camera2.CaptureRequest
-import android.hardware.camera2.CaptureResult
-import android.hardware.camera2.TotalCaptureResult
+import android.hardware.camera2.*
+import android.hardware.camera2.params.Face
 import android.hardware.camera2.params.MeteringRectangle
 import android.media.Image
 import android.media.ImageReader
@@ -51,7 +44,7 @@ class Camera2(
   companion object {
     private const val FOCUS_SIZE = 200
     private const val FOCUS_TAG = "FOCUS_TAG"
-    private const val DISTANCE_REDRAW = 25
+    private const val DISTANCE_REDRAW = 50
   }
 
   private var cameraId: String = ""
@@ -59,21 +52,22 @@ class Camera2(
   private var cameraCharacteristics: CameraCharacteristics? = null
   private var cameraCaptureSession: CameraCaptureSession? = null
   private var previewRequestBuilder: CaptureRequest.Builder? = null
-  private var takePictureCallbacks: ICamera.TakePictureCallbacks? = null
+  private var takePictureCallbacks: ICamera.CaptureImageCallbacks? = null
+  private var backgroundThread: HandlerThread? = null
+  private var backgroundHandler: Handler? = null
+  private var takePictureRunnable: Runnable? = null
+  private var countDownRunnable: Runnable? = null
+  private var mainHandler: Handler? = null
   private var rectFocus = Rect()
   private var countTaskTakePicture = 0
   private var isForceStop = false
   private var isLandscape = false
   private var isBurstMode = false
 
-  private val takePictureImageLock = Semaphore(1)
-
   private lateinit var sensorArraySize: Size
   private lateinit var imageReader: ImageReader
-  private lateinit var backgroundThread: HandlerThread
-  private lateinit var backgroundHandler: Handler
-  private lateinit var takePictureRunnable: Runnable
-  private lateinit var mainHandler: Handler
+
+  private val takePictureImageLock = Semaphore(1)
 
   private val orientationEventListener =
     object : OrientationEventListener(context) {
@@ -115,13 +109,6 @@ class Camera2(
       closeCamera()
     }
 
-    override fun onClosed(camera: CameraDevice) {
-      super.onClosed(camera)
-      if (::backgroundThread.isInitialized) {
-        backgroundThread.quitSafely()
-      }
-    }
-
   }
 
   private val cameraSessionStateCallbackForPreview =
@@ -143,24 +130,31 @@ class Camera2(
         image = imageReader.acquireLatestImage()
       } catch (e: Exception) {
         takePictureImageLock.release()
-        takePictureCallbacks?.takePictureFailed(e)
+        takePictureCallbacks?.captureImageFailed(e)
         return@OnImageAvailableListener
       }
 
-      backgroundHandler.post {
+      backgroundHandler?.post {
         val buffer = image.planes[0].buffer
         val bytes = ByteArray(buffer.remaining())
         buffer.get(bytes)
         try {
+          /**
+           * previewSize is Size of viewContainer at [CameraView.onAttach], because [textureView] has
+           * been added to viewContainer
+           */
           val previewSize = Size(((textureView.parent as RelativeLayout).width),
             ((textureView.parent as RelativeLayout).height))
           val configureBitmap = BitmapUtils.configureBitmap(bytes, previewSize)
-          takePictureCallbacks?.takePictureSucceeded(configureBitmap, isBurstMode)
-          FileUtils.saveImageJPEGIntoFolderMedia(context, configureBitmap,
-            "Vllenin-${System.currentTimeMillis()}")
+          if (isBurstMode) {
+            takePictureCallbacks?.captureBurstSucceeded(configureBitmap, isForceStop)
+          } else {
+            takePictureCallbacks?.captureSucceeded(configureBitmap)
+          }
+          FileUtils.saveImageJPEGIntoMediaFolder(context, configureBitmap, FileUtils.getNameImageDynamic())
           Log.d("XXX", "Save image finished")
         } catch (e: Exception) {
-          takePictureCallbacks?.takePictureFailed(e)
+          takePictureCallbacks?.captureImageFailed(e)
         } finally {
           takePictureImageLock.release()
           buffer.clear()
@@ -179,84 +173,9 @@ class Camera2(
       result: TotalCaptureResult
     ) {
       val facesArray = result[CaptureResult.STATISTICS_FACES]
-      facesArray?.let {
-        val boundsArray = Array<Rect>(facesArray.size) {
-          facesArray[it].bounds
-        }
-        if (!boundsArray.isNullOrEmpty()) {
-          if (rectFocus.centerY() < boundsArray[0].centerY() - DISTANCE_REDRAW ||
-            rectFocus.centerY() > boundsArray[0].centerY() + DISTANCE_REDRAW ||
-            rectFocus.centerX() < boundsArray[0].centerX() - DISTANCE_REDRAW ||
-            rectFocus.centerX() > boundsArray[0].centerX() + DISTANCE_REDRAW ||
-            faceBorderView.isFadeOut) {
+      faceDetection(facesArray)
 
-            rectFocus = boundsArray[0]
-            focusTo(boundsArray[0])
-
-            val arrayRectWillDrawOnPreview = ArrayList<RectF>()
-            boundsArray.forEach { boundsOnSensor ->
-              val centerY: Float
-              val centerX: Float
-              val previewX: Float
-              val previewY: Float
-              var ratioFace = 1.3f
-
-              if (cameraId.contains("1")) {// front camera
-                centerY = (1.0f - boundsOnSensor.centerX().toFloat() / sensorArraySize.width) *
-                  textureView.height
-                centerX = (1.0f - boundsOnSensor.centerY().toFloat() / sensorArraySize.height) *
-                  textureView.width
-                previewX = centerX
-                previewY = centerY
-                ratioFace = 1f
-              } else {
-                // This formula is formula at onTouchPreviewListener in this class
-                centerY = ((boundsOnSensor.centerX().toFloat() * textureView.height.toFloat()) /
-                  sensorArraySize.width.toFloat())
-                centerX = ((1.0f - boundsOnSensor.centerY().toFloat() / sensorArraySize.height.toFloat()) *
-                  (textureView.width.toFloat()))
-                /**
-                 * Workaround: Because i don't know why with this formula, i convert coordinate on
-                 * preview to coordinate on sensor is correct, but in here is incorrect.
-                 * If someone resolve this issues, please push your branch to git.
-                 */
-                val plusX = (centerX - (textureView.width/2)) * (textureView.width.toFloat() /
-                  sensorArraySize.height)
-                /**
-                 * Because preview is center crop, if above crop then "plusY = 0". Search:
-                 * layoutParamsView.addRule(RelativeLayout.CENTER_IN_PARENT) in class CameraView
-                 */
-                val plusY = (textureView.height/2 - textureView.height/2)
-
-                previewX = centerX + plusX.toInt()
-                previewY = centerY - plusY
-              }
-
-              val widthFace: Float
-              val heightFace: Float
-              if (!isLandscape) {
-                widthFace = (boundsOnSensor.width().toFloat() * textureView.height.toFloat() /
-                  sensorArraySize.width * ratioFace)
-                heightFace = (boundsOnSensor.height().toFloat() * textureView.width.toFloat() /
-                  sensorArraySize.height * ratioFace)
-              } else {
-                widthFace = (boundsOnSensor.height().toFloat() * textureView.width.toFloat() /
-                  sensorArraySize.height * ratioFace)
-                heightFace = (boundsOnSensor.width().toFloat() * textureView.height.toFloat() /
-                  sensorArraySize.width * ratioFace)
-              }
-
-              val boundsOnPreview = RectF(previewX - heightFace/2, previewY - widthFace/2,
-                previewX + heightFace/2, previewY + widthFace/2)
-              arrayRectWillDrawOnPreview.add(boundsOnPreview)
-            }
-            mainHandler.post { faceBorderView.drawListFace(arrayRectWillDrawOnPreview.toTypedArray()) }
-          }
-        } else if (boundsArray.isNullOrEmpty()) {
-          mainHandler.post { faceBorderView.fadeOut() }
-        }
-      }
-
+      // Keep state AE/AF of sensor
       if (request.tag == FOCUS_TAG) {
         try {
           previewRequestBuilder?.setTag(null)
@@ -310,7 +229,7 @@ class Camera2(
     }
   }
 
-  override fun capture(takePictureCallbacks: ICamera.TakePictureCallbacks, delayMs: Int) {
+  override fun capture(takePictureCallbacks: ICamera.CaptureImageCallbacks) {
     this.takePictureCallbacks = takePictureCallbacks
     isBurstMode = false
     isForceStop = false
@@ -319,40 +238,67 @@ class Camera2(
     takePicture()
   }
 
-  override fun captureBurst(takePictureCallbacks: ICamera.TakePictureCallbacks, delayMs: Int) {
+  override fun captureBurst(takePictureCallbacks: ICamera.CaptureImageCallbacks) {
     this.takePictureCallbacks = takePictureCallbacks
     isBurstMode = true
     isForceStop = false
     takePictureImageLock.release()
-    countTaskTakePicture = 0
+
     takePictureRunnable = Runnable {
-      Log.d("XXX", "Running ~~~~~~~~~~~~~~~")
       if (!isForceStop) {
-        mainHandler.post {
+        mainHandler?.post {
           takePictureImageLock.acquire()
-          countTaskTakePicture++
-          Log.d("XXX", "countTaskTakePicture $countTaskTakePicture")
           takePicture()
-          backgroundHandler.postDelayed(takePictureRunnable, 100)
+          backgroundHandler?.postDelayed(takePictureRunnable!!, 100)
         }
       }
     }
-    backgroundHandler.post(takePictureRunnable)
+    backgroundHandler?.post(takePictureRunnable!!)
   }
 
   override fun stopCaptureBurst() {
     takePictureImageLock.release()
-    backgroundHandler.removeCallbacks(takePictureRunnable)
     isForceStop = true
     takePictureCallbacks = null
+    backgroundHandler?.removeCallbacks(takePictureRunnable ?: Runnable {})
   }
 
-  override fun captureBurstFreeHand(takePictureCallbacks: ICamera.TakePictureCallbacks, delayMs: Int) {
+  override fun captureBurstFreeHand(takePictureCallbacks: ICamera.CaptureImageCallbacks,
+    amountImage: Int, distance: Long, delayMs: Long) {
     this.takePictureCallbacks = takePictureCallbacks
     isBurstMode = true
-    countTaskTakePicture = 0
     isForceStop = false
+    takePictureImageLock.release()
+    countTaskTakePicture = 0
 
+    var timeCountDown = 0
+    countDownRunnable = Runnable {
+      if (timeCountDown < delayMs) {
+        takePictureCallbacks.countDownTimerCaptureWithDelay(delayMs - timeCountDown, false)
+        timeCountDown += 1000
+        backgroundHandler?.postDelayed(countDownRunnable!!, 1000)
+      } else {
+        takePictureCallbacks.countDownTimerCaptureWithDelay(1000, true)
+        takePictureRunnable = Runnable {
+          if (!isForceStop && countTaskTakePicture < amountImage) {
+            mainHandler?.post {
+              takePictureImageLock.acquire()
+              countTaskTakePicture++
+              takePicture()
+              backgroundHandler?.postDelayed(takePictureRunnable!!, distance)
+            }
+          }
+        }
+        backgroundHandler?.post(takePictureRunnable!!)
+      }
+    }
+    backgroundHandler?.post(countDownRunnable!!)
+
+  }
+
+  override fun stopCaptureBurstFreeHand() {
+    stopCaptureBurst()
+    backgroundHandler?.removeCallbacks(countDownRunnable ?: Runnable {})
   }
 
   override fun closeCamera() {
@@ -365,11 +311,11 @@ class Camera2(
       imageReader.close()
       quitBackgroundThread()
     } catch (e: CameraAccessException) {
-      DebugLog.e(e.message ?: " When closeCamera")
+      DebugLog.e(e.message ?: e.toString())
     } catch (e: InterruptedException) {
-      DebugLog.e(e.message ?: " When closeCamera")
+      DebugLog.e(e.message ?: e.toString())
     } catch (e: Exception) {
-      DebugLog.e(e.message ?: " When closeCamera")
+      DebugLog.e(e.message ?: e.toString())
     }
   }
 
@@ -417,15 +363,15 @@ class Camera2(
 
   private fun initBackgroundThread() {
     backgroundThread = HandlerThread("Camera2")
-    backgroundThread.start()
-    backgroundHandler = Handler(backgroundThread.looper)
+    backgroundThread?.start()
+    backgroundHandler = Handler(backgroundThread?.looper ?: Looper.getMainLooper())
 
     mainHandler = Handler(Looper.getMainLooper())
   }
 
   private fun quitBackgroundThread() {
-    backgroundHandler.looper.quitSafely()
-    backgroundThread.join()
+    backgroundHandler?.looper?.quitSafely()
+    backgroundThread?.join()
   }
 
   private fun focusTo(rect: Rect) {
@@ -460,19 +406,96 @@ class Camera2(
   }
 
   private fun isMeteringAreaAESupported(): Boolean {
-    val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-    val cameraCharacteristic = cameraManager.getCameraCharacteristics(cameraId)
-    val maxRegionsAE = cameraCharacteristic.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AE)
+    val maxRegionsAE = cameraCharacteristics?.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AE)
       ?: return false
     return maxRegionsAE >= 1
   }
 
   private fun isMeteringAreaAFSupported(): Boolean {
-    val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-    val cameraCharacteristic = cameraManager.getCameraCharacteristics(cameraId)
-    val maxRegionsAF = cameraCharacteristic.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AF)
+    val maxRegionsAF = cameraCharacteristics?.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AF)
       ?: return false
     return maxRegionsAF >= 1
+  }
+
+  private fun faceDetection(facesArray: Array<Face>?) {
+    facesArray?.let {
+      val boundsArray = Array<Rect>(facesArray.size) {
+        facesArray[it].bounds
+      }
+      if (!boundsArray.isNullOrEmpty()) {
+        if (rectFocus.centerY() < boundsArray[0].centerY() - DISTANCE_REDRAW ||
+          rectFocus.centerY() > boundsArray[0].centerY() + DISTANCE_REDRAW ||
+          rectFocus.centerX() < boundsArray[0].centerX() - DISTANCE_REDRAW ||
+          rectFocus.centerX() > boundsArray[0].centerX() + DISTANCE_REDRAW ||
+          faceBorderView.isFadeOut) {
+
+          rectFocus = boundsArray[0]
+          focusTo(boundsArray[0])
+
+          val arrayRectWillDrawOnPreview = ArrayList<RectF>()
+          boundsArray.forEach { boundsOnSensor ->
+            val centerY: Float
+            val centerX: Float
+            val previewX: Float
+            val previewY: Float
+            var ratioFace = 1.3f
+
+            if (cameraId.contains("1")) {// front camera
+              centerY = (1.0f - boundsOnSensor.centerX().toFloat() / sensorArraySize.width) *
+                textureView.height
+              centerX = (1.0f - boundsOnSensor.centerY().toFloat() / sensorArraySize.height) *
+                textureView.width
+              previewX = centerX
+              previewY = centerY
+              ratioFace = 1f
+            } else {
+              // This formula is formula at onTouchPreviewListener in this class
+              centerY = ((boundsOnSensor.centerX().toFloat() * textureView.height.toFloat()) /
+                sensorArraySize.width.toFloat())
+              centerX = ((1.0f - boundsOnSensor.centerY().toFloat() / sensorArraySize.height.toFloat()) *
+                (textureView.width.toFloat()))
+              /**
+               * Workaround: Because i don't know why with this formula, i convert coordinate on
+               * preview to coordinate on sensor is correct [onTouchPreviewListener], but in here
+               * is incorrect.
+               * If someone resolve this issues, please push your branch to git.
+               */
+              val plusX = (centerX - (textureView.width/2)) * (textureView.width.toFloat() /
+                sensorArraySize.height)
+              /**
+               * Because preview is center crop, if above crop then "plusY = 0". Refer:
+               * layoutParamsView.addRule(RelativeLayout.CENTER_IN_PARENT) in [CameraView.onAttach]
+               */
+              val plusY = (textureView.height/2 - textureView.height/2)
+
+              previewX = centerX + plusX.toInt()
+              previewY = centerY - plusY
+            }
+
+            val widthFace: Float
+            val heightFace: Float
+            if (!isLandscape) {
+              widthFace = (boundsOnSensor.width().toFloat() * textureView.height.toFloat() /
+                sensorArraySize.width * ratioFace)
+              heightFace = (boundsOnSensor.height().toFloat() * textureView.width.toFloat() /
+                sensorArraySize.height * ratioFace)
+            } else {
+              widthFace = (boundsOnSensor.height().toFloat() * textureView.width.toFloat() /
+                sensorArraySize.height * ratioFace)
+              heightFace = (boundsOnSensor.width().toFloat() * textureView.height.toFloat() /
+                sensorArraySize.width * ratioFace)
+            }
+
+            val boundsOnPreview = RectF(previewX - heightFace/2, previewY - widthFace/2,
+              previewX + heightFace/2, previewY + widthFace/2)
+            arrayRectWillDrawOnPreview.add(boundsOnPreview)
+          }
+          mainHandler?.post { faceBorderView.drawListFace(arrayRectWillDrawOnPreview.toTypedArray()) }
+        }
+      } else if (boundsArray.isNullOrEmpty()) {
+        mainHandler?.post { faceBorderView.fadeOut() }
+      }
+    }
   }
 
 }

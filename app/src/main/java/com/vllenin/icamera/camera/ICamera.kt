@@ -11,13 +11,16 @@ interface ICamera {
 
   fun switchCamera()
 
-  fun capture(takePictureCallbacks: TakePictureCallbacks, delayMs: Int = 0)
+  fun capture(takePictureCallbacks: CaptureImageCallbacks)
 
-  fun captureBurst(takePictureCallbacks: TakePictureCallbacks, delayMs: Int = 0)
+  fun captureBurst(takePictureCallbacks: CaptureImageCallbacks)
 
   fun stopCaptureBurst()
 
-  fun captureBurstFreeHand(takePictureCallbacks: TakePictureCallbacks, delayMs: Int = 0)
+  fun captureBurstFreeHand(takePictureCallbacks: CaptureImageCallbacks,
+                           amountImage: Int, distance: Long, delayMs: Long)
+
+  fun stopCaptureBurstFreeHand()
 
   fun closeCamera()
 
@@ -39,10 +42,17 @@ interface ICamera {
     }
   }
 
-  interface TakePictureCallbacks {
-    fun takePictureSucceeded(picture: Bitmap, isBurstMode: Boolean)
+  interface CaptureImageCallbacks {
+    fun captureSucceeded(picture: Bitmap)
 
-    fun takePictureFailed(e: Exception)
+    /**
+     * [captureBurst] and [captureBurstFreeHand] always callback this method
+     */
+    fun captureBurstSucceeded(picture: Bitmap, sessionBurstCompleted: Boolean)
+
+    fun countDownTimerCaptureWithDelay(time: Long, ended: Boolean)
+
+    fun captureImageFailed(e: Exception)
   }
 
   enum class CameraFace {

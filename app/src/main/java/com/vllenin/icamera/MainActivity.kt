@@ -8,9 +8,8 @@ import android.view.MotionEvent
 import android.view.View
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 import com.vllenin.icamera.camera.CameraView
-import com.vllenin.icamera.camera.ICamera.TakePictureCallbacks
+import com.vllenin.icamera.camera.ICamera.CaptureImageCallbacks
 import com.vllenin.icamera.common.DebugLog
 import com.vllenin.icamera.common.FileUtils
 import com.vllenin.icamera.common.permission.PermissionUtil
@@ -19,31 +18,42 @@ import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
-  private var permissionUtils: PermissionUtil? = null
   private var countImage = 0
 
-  private val takePictureCallbacks = object : TakePictureCallbacks {
-    override fun takePictureSucceeded(picture: Bitmap, isBurstMode: Boolean) {
+  private val takePictureCallbacks = object : CaptureImageCallbacks {
+    override fun captureSucceeded(picture: Bitmap) {
       runOnUiThread {
-        if (isBurstMode) {
-          Log.d("XXX", "takePictureSucceeded 111")
-          textView.visibility = View.VISIBLE
-          imagePreview.visibility = View.INVISIBLE
-          overlay.visibility = View.INVISIBLE
-          countImage++
-          textView.text = countImage.toString()
-        } else {
-          Log.d("XXX", "takePictureSucceeded 222")
-          textView.visibility = View.INVISIBLE
-          imagePreview.visibility = View.VISIBLE
-          overlay.visibility = View.VISIBLE
-          imageView.setImageBitmap(picture)
-        }
+        Log.d("XXX", "captureSucceeded")
+        textView.visibility = View.INVISIBLE
+        imagePreview.visibility = View.VISIBLE
+        overlay.visibility = View.VISIBLE
+        imageView.setImageBitmap(picture)
       }
-
     }
 
-    override fun takePictureFailed(e: Exception) {
+    override fun captureBurstSucceeded(picture: Bitmap, sessionBurstCompleted: Boolean) {
+      runOnUiThread {
+        Log.d("XXX", "captureBurstSucceeded $sessionBurstCompleted")
+        textView.visibility = View.VISIBLE
+        imagePreview.visibility = View.INVISIBLE
+        overlay.visibility = View.INVISIBLE
+        countImage++
+        textView.text = countImage.toString()
+      }
+    }
+
+    override fun countDownTimerCaptureWithDelay(time: Long, ended: Boolean) {
+      runOnUiThread {
+        if (ended) {
+          countDown.visibility = View.INVISIBLE
+        } else {
+          countDown.visibility = View.VISIBLE
+        }
+        countDown.text = (time / 1000).toString()
+      }
+    }
+
+    override fun captureImageFailed(e: Exception) {
       DebugLog.e(e.message ?: e.toString())
     }
   }
@@ -53,8 +63,7 @@ class MainActivity : AppCompatActivity() {
     super.onCreate(savedInstanceState)
     setContentView(R.layout.activity_main)
 
-    permissionUtils = PermissionUtil(this)
-    permissionUtils?.request(android.Manifest.permission.CAMERA,
+    PermissionUtil(this).request(android.Manifest.permission.CAMERA,
       android.Manifest.permission.WRITE_EXTERNAL_STORAGE) { granted, _ ->
       if (granted) {
         initCamera()
@@ -75,27 +84,25 @@ class MainActivity : AppCompatActivity() {
       cameraView.switchCamera()
     }
 
-    /**********************************************************************************************/
+    /**************************** Capture ************************************************/
 
-    takePicture.setOnClickListener {
+    capture.setOnClickListener {
       cameraView.capture(takePictureCallbacks)
 
     }
 
-    /**********************************************************************************************/
+    /****************************** Burst **********************************************/
 
     burst.setOnLongClickListener {
-      it.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_green_dark))
       countImage = 0
       cameraView.captureBurst(takePictureCallbacks)
 
       true
     }
 
-    burst.setOnTouchListener { view, motionEvent ->
+    burst.setOnTouchListener { _, motionEvent ->
       when (motionEvent.action) {
         MotionEvent.ACTION_UP -> {
-          view.setBackgroundColor(ContextCompat.getColor(this, android.R.color.darker_gray))
           cameraView.stopCaptureBurst()
         }
       }
@@ -103,15 +110,16 @@ class MainActivity : AppCompatActivity() {
       false
     }
 
-    /**********************************************************************************************/
+    /***************************** Burst free hand ************************************************/
 
     burstFreeHand.setOnClickListener {
-
+      countImage = 0
+      cameraView.captureBurstFreeHand(takePictureCallbacks, 10, 500L, 5000L)
     }
   }
 
   private fun initMediaFolder() {
-    val file = File(FileUtils.getPathFolderMedia())
+    val file = File(FileUtils.getPathMediaFolder())
     if (!file.exists()) {
       file.mkdirs()
     }

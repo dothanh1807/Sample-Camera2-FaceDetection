@@ -69,6 +69,7 @@ class CameraView: Fragment() {
 
   override fun onStop() {
     super.onStop()
+    stopCaptureBurstFreeHand()
     iCamera?.closeCamera()
   }
 
@@ -76,16 +77,25 @@ class CameraView: Fragment() {
     iCamera?.switchCamera()
   }
 
-  fun capture(takePictureCallbacks: ICamera.TakePictureCallbacks, delayMs: Int = 0) {
-    iCamera?.capture(takePictureCallbacks, delayMs)
+  fun capture(takePictureCallbacks: ICamera.CaptureImageCallbacks) {
+    iCamera?.capture(takePictureCallbacks)
   }
 
-  fun captureBurst(takePictureCallbacks: ICamera.TakePictureCallbacks, delayMs: Int = 0) {
-    iCamera?.captureBurst(takePictureCallbacks, delayMs)
+  fun captureBurst(takePictureCallbacks: ICamera.CaptureImageCallbacks) {
+    iCamera?.captureBurst(takePictureCallbacks)
   }
 
   fun stopCaptureBurst() {
     iCamera?.stopCaptureBurst()
+  }
+
+  fun captureBurstFreeHand(takePictureCallbacks: ICamera.CaptureImageCallbacks,
+                           amountImage: Int, distance: Long, delayMs: Long) {
+    iCamera?.captureBurstFreeHand(takePictureCallbacks, amountImage, distance, delayMs)
+  }
+
+  fun stopCaptureBurstFreeHand() {
+    iCamera?.stopCaptureBurstFreeHand()
   }
 
 }

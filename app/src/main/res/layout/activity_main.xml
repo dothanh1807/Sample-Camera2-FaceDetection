@@ -7,46 +7,56 @@
     tools:ignore="HardcodedText"
     >
 
-  <Button
-      android:id="@+id/switchCamera"
-      android:layout_width="wrap_content"
-      android:layout_height="wrap_content"
-      android:layout_centerHorizontal="true"
-      android:text="Switch"
-      />
-
-  <Button
-      android:id="@+id/takePicture"
-      android:layout_width="wrap_content"
-      android:layout_height="wrap_content"
+  <RelativeLayout
+      android:id="@+id/buttonContainer"
       android:layout_alignParentBottom="true"
-      android:text="Take Picture"
-      />
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content">
+    <Button
+        android:id="@+id/switchCamera"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerHorizontal="true"
+        android:background="@drawable/capture_selector"
+        android:text="Switch"
+        />
 
-  <Button
-      android:id="@+id/burst"
-      android:text="Burst"
-      android:background="@android:color/darker_gray"
-      android:layout_alignParentBottom="true"
-      android:layout_toRightOf="@+id/takePicture"
-      android:layout_width="wrap_content"
-      android:layout_height="wrap_content"
-      tools:ignore="RtlHardcoded" />
+    <Button
+        android:id="@+id/capture"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/switchCamera"
+        android:layout_centerHorizontal="true"
+        android:background="@drawable/capture_selector"
+        android:text="Capture"
+        />
 
-  <Button
-      android:id="@+id/burstFreeHand"
-      android:text="Burst Free Hand"
-      android:layout_alignParentRight="true"
-      android:layout_alignParentBottom="true"
-      android:layout_width="wrap_content"
-      android:layout_height="wrap_content"
-      tools:ignore="RtlHardcoded" />
+    <Button
+        android:id="@+id/burst"
+        android:text="   Capture Burst   "
+        android:layout_below="@+id/capture"
+        android:layout_centerHorizontal="true"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/capture_selector"
+        tools:ignore="RtlHardcoded" />
+
+    <Button
+        android:id="@+id/burstFreeHand"
+        android:text="   Burst Free Hand   "
+        android:layout_below="@+id/burst"
+        android:layout_centerHorizontal="true"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/capture_selector"
+        tools:ignore="RtlHardcoded" />
+  </RelativeLayout>
 
   <FrameLayout
       android:id="@+id/fragmentContainer"
       android:layout_width="match_parent"
-      android:layout_height="500dp"
-      android:layout_centerInParent="true"
+      android:layout_height="wrap_content"
+      android:layout_above="@+id/buttonContainer"
       />
 
   <View
@@ -76,6 +86,15 @@
       android:id="@+id/textView"
       android:textSize="40sp"
       android:textColor="#F7C229"
+      android:visibility="invisible"
+      android:layout_centerInParent="true"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"/>
+
+  <TextView
+      android:id="@+id/countDown"
+      android:textSize="80sp"
+      android:textColor="@android:color/white"
       android:visibility="invisible"
       android:layout_centerInParent="true"
       android:layout_width="wrap_content"
