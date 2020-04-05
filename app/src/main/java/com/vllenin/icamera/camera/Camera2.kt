@@ -15,7 +15,6 @@ import android.os.Build.VERSION_CODES
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
-import android.util.Log
 import android.util.Size
 import android.view.OrientationEventListener
 import android.view.Surface
@@ -59,10 +58,11 @@ class Camera2(
   private var countDownRunnable: Runnable? = null
   private var mainHandler: Handler? = null
   private var rectFocus = Rect()
-  private var countTaskTakePicture = 0
-  private var isForceStop = false
+  private var countTasksTakePicture = 0
+  private var countImagesSaved = 0
+  private var amountImagesMustCapture = 0
   private var isLandscape = false
-  private var isBurstMode = false
+  private var modeCapture = ICamera.ModeCapture.CAPTURE
 
   private lateinit var sensorArraySize: Size
   private lateinit var imageReader: ImageReader
@@ -124,11 +124,12 @@ class Camera2(
     }
 
   private val imageReaderAvailableListener = ImageReader.OnImageAvailableListener { imageReader ->
-    if (!isForceStop) {
+    if (countImagesSaved < amountImagesMustCapture || modeCapture != ICamera.ModeCapture.BURST_FREE_HAND) {
       val image: Image
       try {
         image = imageReader.acquireLatestImage()
       } catch (e: Exception) {
+        countTasksTakePicture--
         takePictureImageLock.release()
         takePictureCallbacks?.captureImageFailed(e)
         return@OnImageAvailableListener
@@ -146,13 +147,17 @@ class Camera2(
           val previewSize = Size(((textureView.parent as RelativeLayout).width),
             ((textureView.parent as RelativeLayout).height))
           val configureBitmap = BitmapUtils.configureBitmap(bytes, previewSize)
-          if (isBurstMode) {
-            takePictureCallbacks?.captureBurstSucceeded(configureBitmap, isForceStop)
-          } else {
-            takePictureCallbacks?.captureSucceeded(configureBitmap)
+          if (modeCapture != ICamera.ModeCapture.IDLE) {
+            FileUtils.saveImageJPEGIntoMediaFolder(context, configureBitmap, FileUtils.getNameImageDynamic()) {
+              countImagesSaved++
+              if (modeCapture != ICamera.ModeCapture.CAPTURE) {
+                takePictureCallbacks?.captureBurstSucceeded(configureBitmap,
+                  countImagesSaved == amountImagesMustCapture)
+              } else {
+                takePictureCallbacks?.captureSucceeded(configureBitmap)
+              }
+            }
           }
-          FileUtils.saveImageJPEGIntoMediaFolder(context, configureBitmap, FileUtils.getNameImageDynamic())
-          Log.d("XXX", "Save image finished")
         } catch (e: Exception) {
           takePictureCallbacks?.captureImageFailed(e)
         } finally {
@@ -231,8 +236,7 @@ class Camera2(
 
   override fun capture(takePictureCallbacks: ICamera.CaptureImageCallbacks) {
     this.takePictureCallbacks = takePictureCallbacks
-    isBurstMode = false
-    isForceStop = false
+    modeCapture = ICamera.ModeCapture.CAPTURE
     takePictureImageLock.release()
 
     takePicture()
@@ -240,12 +244,11 @@ class Camera2(
 
   override fun captureBurst(takePictureCallbacks: ICamera.CaptureImageCallbacks) {
     this.takePictureCallbacks = takePictureCallbacks
-    isBurstMode = true
-    isForceStop = false
+    modeCapture = ICamera.ModeCapture.BURST
     takePictureImageLock.release()
 
     takePictureRunnable = Runnable {
-      if (!isForceStop) {
+      if (modeCapture != ICamera.ModeCapture.IDLE) {
         mainHandler?.post {
           takePictureImageLock.acquire()
           takePicture()
@@ -258,18 +261,20 @@ class Camera2(
 
   override fun stopCaptureBurst() {
     takePictureImageLock.release()
-    isForceStop = true
+    modeCapture = ICamera.ModeCapture.IDLE
     takePictureCallbacks = null
     backgroundHandler?.removeCallbacks(takePictureRunnable ?: Runnable {})
   }
 
   override fun captureBurstFreeHand(takePictureCallbacks: ICamera.CaptureImageCallbacks,
     amountImage: Int, distance: Long, delayMs: Long) {
+    stopCaptureBurstFreeHand()
     this.takePictureCallbacks = takePictureCallbacks
-    isBurstMode = true
-    isForceStop = false
+    modeCapture = ICamera.ModeCapture.BURST_FREE_HAND
     takePictureImageLock.release()
-    countTaskTakePicture = 0
+    countTasksTakePicture = 0
+    countImagesSaved = 0
+    amountImagesMustCapture = amountImage
 
     var timeCountDown = 0
     countDownRunnable = Runnable {
@@ -280,10 +285,10 @@ class Camera2(
       } else {
         takePictureCallbacks.countDownTimerCaptureWithDelay(1000, true)
         takePictureRunnable = Runnable {
-          if (!isForceStop && countTaskTakePicture < amountImage) {
+          if (modeCapture != ICamera.ModeCapture.IDLE && countTasksTakePicture < amountImage) {
             mainHandler?.post {
               takePictureImageLock.acquire()
-              countTaskTakePicture++
+              countTasksTakePicture++
               takePicture()
               backgroundHandler?.postDelayed(takePictureRunnable!!, distance)
             }
@@ -297,8 +302,9 @@ class Camera2(
   }
 
   override fun stopCaptureBurstFreeHand() {
-    stopCaptureBurst()
     backgroundHandler?.removeCallbacks(countDownRunnable ?: Runnable {})
+    takePictureCallbacks?.countDownTimerCaptureWithDelay(-1, true)
+    stopCaptureBurst()
   }
 
   override fun closeCamera() {
@@ -346,7 +352,6 @@ class Camera2(
   }
 
   private fun takePicture() {
-    Log.d("XXX", "takePicture")
     val takePictureRequestBuilder =
       cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
     takePictureRequestBuilder?.addTarget(imageReader.surface)

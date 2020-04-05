@@ -3,9 +3,10 @@ package com.vllenin.icamera
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
+import android.os.Handler
 import android.view.MotionEvent
 import android.view.View
+import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import com.vllenin.icamera.camera.CameraView
@@ -23,22 +24,26 @@ class MainActivity : AppCompatActivity() {
   private val takePictureCallbacks = object : CaptureImageCallbacks {
     override fun captureSucceeded(picture: Bitmap) {
       runOnUiThread {
-        Log.d("XXX", "captureSucceeded")
-        textView.visibility = View.INVISIBLE
+        countImageCapture.visibility = View.INVISIBLE
         imagePreview.visibility = View.VISIBLE
         overlay.visibility = View.VISIBLE
         imageView.setImageBitmap(picture)
       }
     }
 
-    override fun captureBurstSucceeded(picture: Bitmap, sessionBurstCompleted: Boolean) {
+    override fun captureBurstSucceeded(picture: Bitmap?, sessionBurstFinished: Boolean) {
       runOnUiThread {
-        Log.d("XXX", "captureBurstSucceeded $sessionBurstCompleted")
-        textView.visibility = View.VISIBLE
+        countImageCapture.visibility = View.VISIBLE
         imagePreview.visibility = View.INVISIBLE
         overlay.visibility = View.INVISIBLE
         countImage++
-        textView.text = countImage.toString()
+        countImageCapture.text = countImage.toString()
+        if (sessionBurstFinished) {
+          Handler().postDelayed({
+            countImageCapture.visibility = View.INVISIBLE
+          }, 300)
+          Toast.makeText(applicationContext, "Session capture burst completed", Toast.LENGTH_SHORT).show()
+        }
       }
     }
 
@@ -48,8 +53,8 @@ class MainActivity : AppCompatActivity() {
           countDown.visibility = View.INVISIBLE
         } else {
           countDown.visibility = View.VISIBLE
+          countDown.text = (time / 1000).toString()
         }
-        countDown.text = (time / 1000).toString()
       }
     }
 
@@ -104,6 +109,9 @@ class MainActivity : AppCompatActivity() {
       when (motionEvent.action) {
         MotionEvent.ACTION_UP -> {
           cameraView.stopCaptureBurst()
+          Handler().postDelayed({
+            countImageCapture.visibility = View.INVISIBLE
+          }, 300)
         }
       }
 
@@ -114,7 +122,7 @@ class MainActivity : AppCompatActivity() {
 
     burstFreeHand.setOnClickListener {
       countImage = 0
-      cameraView.captureBurstFreeHand(takePictureCallbacks, 10, 500L, 5000L)
+      cameraView.captureBurstFreeHand(takePictureCallbacks, 10, 100L, 5000L)
     }
   }
 
@@ -127,7 +135,7 @@ class MainActivity : AppCompatActivity() {
 
   override fun onBackPressed() {
     when {
-      textView.visibility == View.VISIBLE -> textView.visibility = View.INVISIBLE
+      countImageCapture.visibility == View.VISIBLE -> countImageCapture.visibility = View.INVISIBLE
 
       imagePreview.visibility == View.VISIBLE -> {
         overlay.visibility = View.INVISIBLE

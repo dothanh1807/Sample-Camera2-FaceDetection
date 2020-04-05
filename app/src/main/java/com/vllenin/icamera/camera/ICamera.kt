@@ -45,10 +45,8 @@ interface ICamera {
   interface CaptureImageCallbacks {
     fun captureSucceeded(picture: Bitmap)
 
-    /**
-     * [captureBurst] and [captureBurstFreeHand] always callback this method
-     */
-    fun captureBurstSucceeded(picture: Bitmap, sessionBurstCompleted: Boolean)
+    /** [captureBurst] and [captureBurstFreeHand] always callback this method */
+    fun captureBurstSucceeded(picture: Bitmap?, sessionBurstFinished: Boolean)
 
     fun countDownTimerCaptureWithDelay(time: Long, ended: Boolean)
 
@@ -58,5 +56,12 @@ interface ICamera {
   enum class CameraFace {
     FRONT,
     BACK
+  }
+
+  enum class ModeCapture {
+    IDLE,
+    CAPTURE,
+    BURST,
+    BURST_FREE_HAND
   }
 }

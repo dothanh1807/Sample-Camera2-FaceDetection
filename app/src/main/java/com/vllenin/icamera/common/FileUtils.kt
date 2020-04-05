@@ -17,7 +17,8 @@ object FileUtils {
   private const val MIME_TYPE_JPEG = "image/jpeg"
 
   @Throws
-  fun saveImageJPEGIntoMediaFolder(context: Context, bitmap: Bitmap, nameImage: String) {
+  fun saveImageJPEGIntoMediaFolder(context: Context, bitmap: Bitmap,
+                                   nameImage: String, callbackIfSaveSuccess: () -> Unit) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
       val contentValues = ContentValues().apply {
         put(MediaStore.MediaColumns.DISPLAY_NAME, nameImage)
@@ -36,6 +37,7 @@ object FileUtils {
         fileOutputStream.close()
       }
     }
+    callbackIfSaveSuccess.invoke()
 
   }
 

@@ -83,7 +83,7 @@
   </RelativeLayout>
 
   <TextView
-      android:id="@+id/textView"
+      android:id="@+id/countImageCapture"
       android:textSize="40sp"
       android:textColor="#F7C229"
       android:visibility="invisible"
