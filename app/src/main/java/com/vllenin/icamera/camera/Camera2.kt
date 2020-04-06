@@ -400,6 +400,7 @@ class Camera2(
 
   private fun focusTo(arrayRect: Array<Rect>) {
     try {
+      cameraCaptureSession?.stopRepeating()
       previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_TRIGGER,
         CameraMetadata.CONTROL_AF_TRIGGER_CANCEL)
       previewRequestBuilder?.setTag(FOCUS_TAG)
@@ -420,11 +421,9 @@ class Camera2(
         previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_TRIGGER,
           CameraMetadata.CONTROL_AF_TRIGGER_START)
       }
-//      if (isMeteringAreaAESupported()) {
-//        previewRequestBuilder?.set(CaptureRequest.CONTROL_AE_REGIONS, arrayMeteringRectangle.toTypedArray())
-//        previewRequestBuilder?.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER,
-//          CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_START)
-//      }
+      if (isMeteringAreaAESupported()) {
+        previewRequestBuilder?.set(CaptureRequest.CONTROL_AE_REGIONS, arrayMeteringRectangle.toTypedArray())
+      }
       previewRequestBuilder?.setTag(FOCUS_TAG)
       previewRequestBuilder?.let {
         cameraCaptureSession?.capture(it.build(), captureCallback, backgroundHandler)
