@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="size_rect_before">60dp</dimen>
+    <dimen name="size_rect_after">30dp</dimen>
+    <dimen name="width_line">8dp</dimen>
+</resources>

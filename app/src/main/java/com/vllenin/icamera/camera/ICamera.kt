@@ -64,4 +64,9 @@ interface ICamera {
     BURST,
     BURST_FREE_HAND
   }
+
+  enum class ModeFocus {
+    TOUCH_FOCUS,
+    AUTO_FOCUS_TO_FACES
+  }
 }

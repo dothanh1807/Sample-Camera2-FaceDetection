@@ -6,7 +6,15 @@ import android.content.Context
 import android.graphics.ImageFormat
 import android.graphics.Rect
 import android.graphics.RectF
-import android.hardware.camera2.*
+import android.hardware.camera2.CameraAccessException
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraDevice
+import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CameraMetadata
+import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.CaptureResult
+import android.hardware.camera2.TotalCaptureResult
 import android.hardware.camera2.params.Face
 import android.hardware.camera2.params.MeteringRectangle
 import android.media.Image
@@ -16,10 +24,12 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import android.util.Size
+import android.view.MotionEvent
 import android.view.OrientationEventListener
 import android.view.Surface
 import android.view.View.OnTouchListener
 import android.widget.RelativeLayout
+import com.vllenin.icamera.R
 import com.vllenin.icamera.camera.CameraUtils.CalculationSize.IMAGE
 import com.vllenin.icamera.camera.CameraUtils.CalculationSize.PREVIEW
 import com.vllenin.icamera.camera.ICamera.CameraFace
@@ -41,7 +51,6 @@ class Camera2(
 ) : ICamera {
 
   companion object {
-    private const val FOCUS_SIZE = 200
     private const val FOCUS_TAG = "FOCUS_TAG"
     private const val DISTANCE_REDRAW = 50
   }
@@ -58,16 +67,22 @@ class Camera2(
   private var countDownRunnable: Runnable? = null
   private var mainHandler: Handler? = null
   private var rectFocus = Rect()
+  private var arrayMeteringRectangle = ArrayList<MeteringRectangle>()
   private var countTasksTakePicture = 0
   private var countImagesSaved = 0
   private var amountImagesMustCapture = 0
   private var isLandscape = false
+  private var modeFocus = ICamera.ModeFocus.AUTO_FOCUS_TO_FACES
   private var modeCapture = ICamera.ModeCapture.CAPTURE
 
   private lateinit var sensorArraySize: Size
   private lateinit var imageReader: ImageReader
 
   private val takePictureImageLock = Semaphore(1)
+  private val focusSize = context.resources.getDimensionPixelSize(R.dimen.size_rect_after)
+  private val delayChangeModeFocus = Runnable {
+    modeFocus = ICamera.ModeFocus.AUTO_FOCUS_TO_FACES
+  }
 
   private val orientationEventListener =
     object : OrientationEventListener(context) {
@@ -81,16 +96,25 @@ class Camera2(
     }
 
   private val onTouchPreviewListener = OnTouchListener { view, event ->
-    // Convert coordinate when touch on preview to coordinate on sensor
-    val focusX = (event.y / view.height.toFloat() * sensorArraySize.width.toFloat()).toInt()
-    val focusY = ((1 - event.x / view.width.toFloat()) * sensorArraySize.height.toFloat()).toInt()
+    when (event.action) {
+      MotionEvent.ACTION_DOWN -> {
+        // Convert coordinate when touch on preview to coordinate on sensor
+        val focusX = (event.y / view.height.toFloat() * sensorArraySize.width.toFloat()).toInt()
+        val focusY = ((1 - event.x / view.width.toFloat()) * sensorArraySize.height.toFloat()).toInt()
 
-    val left = max(focusX - FOCUS_SIZE, 0)
-    val top = max(focusY - FOCUS_SIZE, 0)
-    val right = min(focusX + FOCUS_SIZE, sensorArraySize.width)
-    val bottom = min(focusY + FOCUS_SIZE, sensorArraySize.height)
-    rectFocus = Rect(left, top, right, bottom)
-    focusTo(rectFocus)
+        val left = max(focusX - focusSize, 0)
+        val top = max(focusY - focusSize, 0)
+        val right = min(focusX + focusSize, sensorArraySize.width)
+        val bottom = min(focusY + focusSize, sensorArraySize.height)
+        rectFocus = Rect(left, top, right, bottom)
+        mainHandler?.post { faceBorderView.touchTo(event.x, event.y) }
+        focusTo(arrayOf(rectFocus))
+        modeFocus = ICamera.ModeFocus.TOUCH_FOCUS
+        // When touch focus, 4s later auto change focus to faces if face detection
+        mainHandler?.removeCallbacks(delayChangeModeFocus)
+        mainHandler?.postDelayed(delayChangeModeFocus, 4000)
+      }
+    }
 
     true
   }
@@ -146,7 +170,7 @@ class Camera2(
            */
           val previewSize = Size(((textureView.parent as RelativeLayout).width),
             ((textureView.parent as RelativeLayout).height))
-          val configureBitmap = BitmapUtils.configureBitmap(bytes, previewSize)
+          val configureBitmap = BitmapUtils.configureBitmap(bytes, previewSize, cameraId)
           if (modeCapture != ICamera.ModeCapture.IDLE) {
             FileUtils.saveImageJPEGIntoMediaFolder(context, configureBitmap, FileUtils.getNameImageDynamic()) {
               countImagesSaved++
@@ -177,17 +201,15 @@ class Camera2(
       request: CaptureRequest,
       result: TotalCaptureResult
     ) {
-      val facesArray = result[CaptureResult.STATISTICS_FACES]
-      faceDetection(facesArray)
+      if (modeFocus == ICamera.ModeFocus.AUTO_FOCUS_TO_FACES) {
+        val facesArray = result[CaptureResult.STATISTICS_FACES]
+        faceDetection(facesArray)
+      }
 
       // Keep state AE/AF of sensor
       if (request.tag == FOCUS_TAG) {
         try {
           previewRequestBuilder?.setTag(null)
-          previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_TRIGGER,
-            CameraMetadata.CONTROL_AF_TRIGGER_IDLE)
-          previewRequestBuilder?.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER,
-            CameraMetadata.CONTROL_AE_PRECAPTURE_TRIGGER_IDLE)
           previewRequestBuilder?.let {
             cameraCaptureSession?.setRepeatingRequest(it.build(), this, backgroundHandler)
           }
@@ -343,9 +365,6 @@ class Camera2(
     // Face detection with mode MODE_SIMPLE, can change to STATISTICS_FACE_DETECT_MODE_FULL
     previewRequestBuilder?.set(CaptureRequest.STATISTICS_FACE_DETECT_MODE,
       CameraMetadata.STATISTICS_FACE_DETECT_MODE_SIMPLE)
-    if (!rectFocus.isEmpty) {
-      focusTo(rectFocus)
-    }
 
     cameraDevice?.createCaptureSession(listOf(surface, imageReader.surface),
       cameraSessionStateCallbackForPreview, backgroundHandler)
@@ -379,26 +398,33 @@ class Camera2(
     backgroundThread?.join()
   }
 
-  private fun focusTo(rect: Rect) {
+  private fun focusTo(arrayRect: Array<Rect>) {
     try {
-      cameraCaptureSession?.stopRepeating()
       previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_TRIGGER,
         CameraMetadata.CONTROL_AF_TRIGGER_CANCEL)
-      previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
-      val meteringRectangle = MeteringRectangle(rect, MeteringRectangle.METERING_WEIGHT_MAX)
+      previewRequestBuilder?.setTag(FOCUS_TAG)
+      previewRequestBuilder?.let {
+        cameraCaptureSession?.capture(it.build(), captureCallback, backgroundHandler)
+      }
+
+      arrayMeteringRectangle.clear()
+      arrayRect.forEach {
+        val meteringRectangle = MeteringRectangle(it, MeteringRectangle.METERING_WEIGHT_MAX - 1)
+        arrayMeteringRectangle.add(meteringRectangle)
+      }
 
       if (isMeteringAreaAFSupported()) {
-        previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(meteringRectangle))
-        previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_TRIGGER,
-          CameraMetadata.CONTROL_AF_TRIGGER_START)
         previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_MODE,
           CameraMetadata.CONTROL_AF_MODE_AUTO)
+        previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_REGIONS, arrayMeteringRectangle.toTypedArray())
+        previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_TRIGGER,
+          CameraMetadata.CONTROL_AF_TRIGGER_START)
       }
-      if (isMeteringAreaAESupported()) {
-        previewRequestBuilder?.set(CaptureRequest.CONTROL_AE_REGIONS, arrayOf(meteringRectangle))
-        previewRequestBuilder?.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER,
-          CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_START)
-      }
+//      if (isMeteringAreaAESupported()) {
+//        previewRequestBuilder?.set(CaptureRequest.CONTROL_AE_REGIONS, arrayMeteringRectangle.toTypedArray())
+//        previewRequestBuilder?.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER,
+//          CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_START)
+//      }
       previewRequestBuilder?.setTag(FOCUS_TAG)
       previewRequestBuilder?.let {
         cameraCaptureSession?.capture(it.build(), captureCallback, backgroundHandler)
@@ -435,7 +461,7 @@ class Camera2(
           faceBorderView.isFadeOut) {
 
           rectFocus = boundsArray[0]
-          focusTo(boundsArray[0])
+          focusTo(boundsArray)
 
           val arrayRectWillDrawOnPreview = ArrayList<RectF>()
           boundsArray.forEach { boundsOnSensor ->
